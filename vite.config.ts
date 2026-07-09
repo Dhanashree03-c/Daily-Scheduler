@@ -9,7 +9,7 @@ export default defineConfig({
     tailwindcss(), // 👈 add this plugin
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icons/scheduler-app.png", "icons/scheduler-app.png"],
+      includeAssets: ["icons/scheduler-app.png"],
       manifest: {
         name: "DayFlow Scheduler",
         short_name: "DayFlow",
@@ -19,8 +19,9 @@ export default defineConfig({
         display: "standalone",
         start_url: "/",
         icons: [
-          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icons/scheduler-app.png", sizes: "192x192", type: "image/png" },
+          { src: "/icons/scheduler-app.png", sizes: "512x512", type: "image/png" },
+          { src: "/icons/scheduler-app.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {
