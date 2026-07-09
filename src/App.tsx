@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { BottomNav } from "./app/components/BottomNav";
 import { InstallPrompt } from "./app/components/InstallPrompt";
 import { PWASetup } from "./app/components/PWASetup";
