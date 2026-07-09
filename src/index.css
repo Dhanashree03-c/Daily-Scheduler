@@ -1,0 +1,307 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: 240 20% 98%;
+  --foreground: 240 10% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 10%;
+  --primary: 262 83% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 6% 10%;
+  --muted: 240 5% 94%;
+  --muted-foreground: 240 4% 46%;
+  --accent: 262 60% 96%;
+  --accent-foreground: 262 70% 42%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --input-background: 0 0% 100%;
+  --ring: 262 83% 58%;
+  --radius: 0.75rem;
+
+  --text: #64748b;
+  --text-h: #0f172a;
+  --bg: hsl(240 20% 98%);
+  --code-bg: #f1f5f9;
+  --accent-brand: #7c3aed;
+  --accent-bg: rgba(124, 58, 237, 0.08);
+  --accent-border: rgba(124, 58, 237, 0.35);
+  --social-bg: rgba(241, 245, 249, 0.8);
+  --shadow: rgba(15, 23, 42, 0.08) 0 4px 24px -4px, rgba(15, 23, 42, 0.04) 0 2px 8px -2px;
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --surface-glass-border: rgba(255, 255, 255, 0.5);
+  --nav-bg: rgba(255, 255, 255, 0.85);
+
+  --sans: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --heading: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 16px/1.5 var(--sans);
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dark {
+  --background: 240 10% 6%;
+  --foreground: 0 0% 95%;
+  --card: 240 10% 9%;
+  --card-foreground: 0 0% 95%;
+  --popover: 240 10% 9%;
+  --popover-foreground: 0 0% 95%;
+  --primary: 262 83% 65%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 6% 14%;
+  --secondary-foreground: 0 0% 95%;
+  --muted: 240 6% 14%;
+  --muted-foreground: 240 5% 64%;
+  --accent: 262 40% 18%;
+  --accent-foreground: 262 80% 78%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 18%;
+  --input: 240 6% 18%;
+  --input-background: 240 10% 11%;
+  --ring: 262 83% 65%;
+
+  --text: #94a3b8;
+  --text-h: #f1f5f9;
+  --bg: hsl(240 10% 6%);
+  --code-bg: #1e293b;
+  --accent-brand: #a78bfa;
+  --accent-bg: rgba(167, 139, 250, 0.12);
+  --accent-border: rgba(167, 139, 250, 0.4);
+  --social-bg: rgba(30, 41, 59, 0.6);
+  --shadow: rgba(0, 0, 0, 0.35) 0 4px 24px -4px, rgba(0, 0, 0, 0.2) 0 2px 8px -2px;
+  --surface-glass: rgba(15, 23, 42, 0.75);
+  --surface-glass-border: rgba(255, 255, 255, 0.08);
+  --nav-bg: rgba(15, 23, 42, 0.88);
+
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-input-background: hsl(var(--input-background));
+  --color-ring: hsl(var(--ring));
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+* {
+  border-color: hsl(var(--border));
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(262 83% 58% / 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, hsl(220 90% 60% / 0.05), transparent);
+}
+
+.dark body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, hsl(262 83% 58% / 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, hsl(220 90% 60% / 0.06), transparent);
+}
+
+#root {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  text-align: left;
+  border-inline: 1px solid hsl(var(--border) / 0.6);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--background) / 0.6);
+  backdrop-filter: blur(8px);
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+h2 {
+  font-size: 1.125rem;
+}
+
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 0.875rem;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
+
+/* Wallpaper presets */
+.wallpaper-none {
+  background: hsl(var(--background));
+}
+.wallpaper-gradient1 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.wallpaper-gradient2 {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+.wallpaper-gradient3 {
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+.wallpaper-gradient4 {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+.wallpaper-pattern1 {
+  background-color: hsl(var(--background));
+  background-image: radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+body.has-wallpaper {
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+body.has-wallpaper #root {
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+}
+
+/* Shared UI utilities */
+.page-shell {
+  padding: 1.25rem 1rem 5.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--primary)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.settings-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+.settings-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.theme-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.875rem 0.75rem;
+  border-radius: calc(var(--radius) - 2px);
+  border: 2px solid hsl(var(--border));
+  background: hsl(var(--card));
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.theme-btn:hover {
+  border-color: hsl(var(--primary) / 0.4);
+  background: hsl(var(--accent));
+}
+
+.theme-btn-active {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--accent));
+  color: hsl(var(--primary));
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
