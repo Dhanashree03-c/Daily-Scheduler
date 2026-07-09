@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router';
+import { Outlet } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { BottomNav } from '../components/BottomNav';
 import { useScheduler } from '../hooks/useScheduler';
