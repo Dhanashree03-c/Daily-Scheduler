@@ -39,8 +39,8 @@ export function PWASetup() {
     addMetaTag('mobile-web-app-capable', 'yes');
     addMetaTag('apple-mobile-web-app-capable', 'yes');
     addMetaTag('apple-mobile-web-app-status-bar-style', 'black-translucent');
-    addMetaTag('apple-mobile-web-app-title', 'Day Scheduler');
-    addMetaTag('application-name', 'Day Scheduler');
+    addMetaTag('apple-mobile-web-app-title', 'NowPlan');
+    addMetaTag('application-name', 'NowPlan');
     addMetaTag('theme-color', '#3b82f6');
     addMetaTag('description', 'A comprehensive day scheduler app with tasks, calendar, music, notes, diary, and goals');
 

@@ -25,7 +25,7 @@ export function InstallPrompt() {
       <div className="flex items-center gap-2">
         <Download className="h-5 w-5 text-primary" />
         <div>
-          <p className="text-sm font-medium">Install Day Scheduler</p>
+          <p className="text-sm font-medium">Install NowPlan</p>
           <p className="text-xs text-muted-foreground">Use it like a real app, offline too.</p>
         </div>
       </div>
