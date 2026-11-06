@@ -1,20 +1,41 @@
-import { useMemo, useState } from "react";
-import { getAllItems } from "../utils/storage";
-import { Badge } from "../components/ui/badge";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { getAllItems, completeItem, skipItem, deleteItem, restoreItem, uncompleteItem, unskipItem, TASKS_CHANGED_EVENT } from "../utils/storage";
+import { TaskCard } from "../components/TaskCard";
+import { EmptyState } from "../components/EmptyState";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { cn } from "../components/ui/utils";
+import { getLocalDateStr, formatDateLong } from "../utils/date";
+import type { Task } from "../types";
 
-function fmt(d: Date) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+const WEEKDAYS = [
+  { short: "Sun", full: "Sunday" },
+  { short: "Mon", full: "Monday" },
+  { short: "Tue", full: "Tuesday" },
+  { short: "Wed", full: "Wednesday" },
+  { short: "Thu", full: "Thursday" },
+  { short: "Fri", full: "Friday" },
+  { short: "Sat", full: "Saturday" },
+];
 
 export function Calendar() {
-  const [monthDate, setMonthDate] = useState(new Date());
-  const [selected, setSelected] = useState(fmt(new Date()));
-  const items = getAllItems();
+  const [monthDate, setMonthDate] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const [selected, setSelected] = useState(getLocalDateStr());
+  const [items, setItems] = useState<Task[]>([]);
+
+  const reload = () => setItems(getAllItems());
+  useEffect(() => {
+    reload();
+    window.addEventListener(TASKS_CHANGED_EVENT, reload);
+    window.addEventListener("focus", reload);
+    return () => {
+      window.removeEventListener(TASKS_CHANGED_EVENT, reload);
+      window.removeEventListener("focus", reload);
+    };
+  }, []);
 
   const days = useMemo(() => {
     const year = monthDate.getFullYear();
@@ -30,66 +51,99 @@ export function Calendar() {
     .filter((i) => i.date === selected)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  const today = fmt(new Date());
+  const today = getLocalDateStr();
+
+  const goToday = () => {
+    const now = new Date();
+    setMonthDate(new Date(now.getFullYear(), now.getMonth(), 1));
+    setSelected(getLocalDateStr());
+  };
 
   return (
-    <div className="page-shell">
-      <h1 className="page-title">Calendar</h1>
+    <main className="page-shell" aria-label="Calendar">
+      <div className="page-head">
+        <div>
+          <p className="page-subtitle mb-0.5">Plan every day 📅</p>
+          <h1 className="page-title">Calendar</h1>
+        </div>
+        <button
+          type="button"
+          onClick={goToday}
+          className="min-h-11 px-4 py-2 rounded-xl bg-accent text-accent-foreground text-sm font-semibold hover:bg-primary/10 transition-colors"
+        >
+          Today
+        </button>
+      </div>
 
       <div className="settings-card">
         <div className="flex items-center justify-between mb-4">
           <button
+            type="button"
             onClick={() => setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() - 1, 1))}
-            className="p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-xl hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Previous month"
           >
             <ChevronLeft className="size-5" />
           </button>
-          <h2 className="font-semibold">
+          <h2 className="font-bold text-base" aria-live="polite">
             {monthDate.toLocaleString("default", { month: "long", year: "numeric" })}
           </h2>
           <button
+            type="button"
             onClick={() => setMonthDate(new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1))}
-            className="p-2 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
+            className="min-w-11 min-h-11 flex items-center justify-center rounded-xl hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
             aria-label="Next month"
           >
             <ChevronRight className="size-5" />
           </button>
         </div>
 
-        <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1">
-          {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-            <div key={i} className="text-muted-foreground font-medium py-1">
-              {d}
+        <div className="grid grid-cols-7 gap-1 text-center text-xs mb-1" role="row">
+          {WEEKDAYS.map((d) => (
+            <div key={d.full} className="text-muted-foreground font-semibold py-1" aria-label={d.full}>
+              <span aria-hidden>{d.short}</span>
+              <span className="sr-only">{d.full}</span>
             </div>
           ))}
           {Array.from({ length: days.leadingBlanks }).map((_, i) => (
-            <div key={"b" + i} />
+            <div key={"b" + i} aria-hidden />
           ))}
           {days.arr.map((d) => {
-            const key = fmt(d);
-            const hasItems = items.some((i) => i.date === key);
+            const key = getLocalDateStr(d);
+            const count = items.filter((i) => i.date === key && !i.completed && !i.skipped).length;
             const isSelected = key === selected;
             const isToday = key === today;
+            const fullLabel = formatDateLong(key);
             return (
               <button
                 key={key}
+                type="button"
                 onClick={() => setSelected(key)}
+                aria-pressed={isSelected}
+                aria-current={isToday ? "date" : undefined}
+                aria-label={`${fullLabel}${count ? `, ${count} task${count === 1 ? "" : "s"}` : ", no tasks"}${isToday ? ", today" : ""}`}
                 className={cn(
-                  "rounded-full h-9 w-9 flex items-center justify-center relative text-sm transition-all",
-                  isSelected && "bg-primary text-primary-foreground font-semibold shadow-sm",
-                  !isSelected && isToday && "ring-2 ring-primary/40 font-semibold",
-                  !isSelected && !isToday && "hover:bg-accent"
+                  "rounded-full h-11 w-11 mx-auto flex items-center justify-center relative text-sm transition-all min-h-11",
+                  isSelected && "bg-primary text-primary-foreground font-bold shadow-md shadow-primary/30 scale-105",
+                  !isSelected && isToday && "ring-2 ring-primary/50 font-bold text-primary",
+                  !isSelected && !isToday && "hover:bg-accent",
+                  !isSelected && isToday && "hover:bg-accent"
                 )}
               >
                 {d.getDate()}
-                {hasItems && (
-                  <span
-                    className={cn(
-                      "absolute bottom-0.5 h-1.5 w-1.5 rounded-full",
-                      isSelected ? "bg-primary-foreground" : "bg-primary"
-                    )}
-                  />
+                {count > 0 && (
+                  <>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "absolute bottom-1 min-w-4 h-4 px-0.5 rounded-full text-[10px] font-bold flex items-center justify-center",
+                        isSelected ? "bg-white text-primary" : "bg-gradient-to-tr from-violet-500 to-fuchsia-500 text-white"
+                      )}
+                    >
+                      {count}
+                    </span>
+                    <span className="sr-only">{count} tasks</span>
+                  </>
                 )}
               </button>
             );
@@ -98,33 +152,52 @@ export function Calendar() {
       </div>
 
       <div className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          {new Date(selected + "T12:00:00").toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })}
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-muted-foreground uppercase tracking-wide">
+            {formatDateLong(selected)}
+          </h2>
+          <a
+            href={`/add?date=${selected}`}
+            className="min-h-11 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+            aria-label={`Add task on ${formatDateLong(selected)}`}
+          >
+            <Plus className="size-4" aria-hidden /> Add here
+          </a>
+        </div>
         {itemsForSelected.length === 0 && (
-          <div className="settings-card text-center py-8">
-            <p className="text-sm text-muted-foreground">Nothing on this day.</p>
-          </div>
+          <EmptyState
+            emoji="🌤️"
+            title="Nothing on this day"
+            message="A blank day is full of promise — add something fun."
+            ctaLabel="Add a task"
+            ctaTo={`/add?date=${selected}`}
+          />
         )}
         {itemsForSelected.map((item) => (
-          <div
+          <TaskCard
             key={item.id}
-            className="flex items-center justify-between border border-border rounded-xl p-3.5 bg-card shadow-sm"
-          >
-            <div>
-              <p className="font-medium">{item.title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {item.startTime} – {item.endTime}
-              </p>
-            </div>
-            <Badge variant={item.type === "appointment" ? "default" : "secondary"}>{item.type}</Badge>
-          </div>
+            task={item}
+            showDate
+            onComplete={(id) => {
+              completeItem(id);
+              reload();
+              toast.success("Done! 🎉", { description: `"${item.title}" completed.`, action: { label: "Undo", onClick: () => { uncompleteItem(id); reload(); } } });
+            }}
+            onSkip={(id) => {
+              skipItem(id);
+              reload();
+              toast("Skipped", { action: { label: "Undo", onClick: () => { unskipItem(id); reload(); } } });
+            }}
+            onDelete={(id) => {
+              deleteItem(id);
+              reload();
+              toast.error("Deleted", { description: `"${item.title}" removed.`, action: { label: "Undo", onClick: () => { restoreItem(item); reload(); } } });
+            }}
+            onUndoComplete={(id) => { uncompleteItem(id); reload(); }}
+            onUndoSkip={(id) => { unskipItem(id); reload(); }}
+          />
         ))}
       </div>
-    </div>
+    </main>
   );
 }

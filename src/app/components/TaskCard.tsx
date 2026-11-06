@@ -1,61 +1,100 @@
+import { useState } from "react";
 import type { Task } from "../types";
-import { Clock, Calendar, CheckCircle2, SkipForward, Edit, Trash2, MapPin, Bell } from 'lucide-react';
-import { Link } from 'react-router';
-import { cn } from './ui/utils';
+import {
+  Clock,
+  Calendar as CalendarIcon,
+  CheckCircle2,
+  SkipForward,
+  Pencil,
+  Trash2,
+  Bell,
+  RotateCcw,
+  Flag,
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import { cn } from "./ui/utils";
+import { formatDateLabel, formatTimeRange } from "../utils/date";
 
 interface TaskCardProps {
   task: Task;
   onComplete: (id: string) => void;
   onSkip: (id: string) => void;
   onDelete: (id: string) => void;
+  onUndoComplete?: (id: string) => void;
+  onUndoSkip?: (id: string) => void;
   showDate?: boolean;
 }
 
-const statusStyles = {
-  completed: 'bg-emerald-500/10 border-emerald-500/30 dark:bg-emerald-500/15',
-  skipped: 'bg-muted/60 border-border',
-  appointment: 'bg-violet-500/10 border-violet-500/30 dark:bg-violet-500/15',
-  task: 'bg-primary/8 border-primary/25 dark:bg-primary/12',
-};
+function statusPill(task: Task, isPast: boolean) {
+  if (task.completed)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+        <CheckCircle2 className="size-3.5" aria-hidden /> Done
+      </span>
+    );
+  if (task.skipped)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-700 dark:text-orange-300 border border-orange-500/30">
+        <SkipForward className="size-3.5" aria-hidden /> Skipped
+      </span>
+    );
+  if (isPast)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+        <Clock className="size-3.5" aria-hidden /> Overdue
+      </span>
+    );
+  if (task.type === "appointment")
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-300 border border-violet-500/30">
+        <CalendarIcon className="size-3.5" aria-hidden /> Appointment
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25">
+      <Flag className="size-3.5" aria-hidden /> Task
+    </span>
+  );
+}
 
-export function TaskCard({ task, onComplete, onSkip, onDelete, showDate = false }: TaskCardProps) {
+const iconBtn =
+  "min-w-11 min-h-11 flex items-center justify-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+export function TaskCard({
+  task,
+  onComplete,
+  onSkip,
+  onDelete,
+  onUndoComplete,
+  onUndoSkip,
+  showDate = false,
+}: TaskCardProps) {
+  const [expanded, setExpanded] = useState(false);
   const isCompleted = task.completed;
   const isSkipped = task.skipped;
   const isPast = new Date(`${task.date}T${task.endTime}`) < new Date();
-
-  const styleKey = isCompleted
-    ? 'completed'
-    : isSkipped
-    ? 'skipped'
-    : task.type === 'appointment'
-    ? 'appointment'
-    : 'task';
+  const needsExpansion = (task.description?.length ?? 0) > 120;
 
   return (
-    <div
+    <article
       className={cn(
-        'p-4 rounded-xl border backdrop-blur-sm transition-all duration-200 hover:shadow-md',
-        statusStyles[styleKey],
-        isPast && !isCompleted && !isSkipped && 'opacity-70'
+        "p-4 rounded-2xl border bg-card shadow-sm transition-all hover:shadow-md",
+        "border-l-4",
+        isCompleted && "border-l-emerald-500 opacity-80",
+        !isCompleted && isSkipped && "border-l-orange-500 opacity-70",
+        !isCompleted && !isSkipped && isPast && "border-l-rose-500",
+        !isCompleted && !isSkipped && !isPast && task.type === "appointment" && "border-l-violet-500",
+        !isCompleted && !isSkipped && !isPast && task.type !== "appointment" && "border-l-primary"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            {task.type === 'appointment' ? (
-              <MapPin className="size-4 text-violet-600 dark:text-violet-400 shrink-0" />
-            ) : (
-              <CheckCircle2
-                className={cn(
-                  'size-4 shrink-0',
-                  isCompleted ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary'
-                )}
-              />
-            )}
+          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+            {statusPill(task, isPast)}
             <h3
               className={cn(
-                'font-semibold truncate',
-                isCompleted && 'line-through text-muted-foreground'
+                "font-semibold text-base leading-snug break-words",
+                isCompleted && "line-through text-muted-foreground"
               )}
             >
               {task.title}
@@ -63,64 +102,114 @@ export function TaskCard({ task, onComplete, onSkip, onDelete, showDate = false 
           </div>
 
           {task.description && (
-            <p className="text-sm text-muted-foreground mb-2 line-clamp-2">{task.description}</p>
+            <div className="mb-2">
+              <p
+                className={cn(
+                  "text-sm text-muted-foreground whitespace-pre-wrap break-words",
+                  !expanded && "line-clamp-2"
+                )}
+              >
+                {task.description}
+              </p>
+              {needsExpansion && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="text-xs font-semibold text-primary min-h-11 px-1 -ml-1"
+                  aria-expanded={expanded}
+                >
+                  {expanded ? "Show less" : "Show more"}
+                </button>
+              )}
+            </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Clock className="size-3.5" />
-              <span>{task.startTime} – {task.endTime}</span>
-            </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Clock className="size-4" aria-hidden />
+              {formatTimeRange(task.startTime, task.endTime)}
+            </span>
             {showDate && (
-              <div className="flex items-center gap-1">
-                <Calendar className="size-3.5" />
-                <span>{new Date(task.date).toLocaleDateString()}</span>
-              </div>
+              <span className="flex items-center gap-1.5">
+                <CalendarIcon className="size-4" aria-hidden />
+                {formatDateLabel(task.date)}
+              </span>
             )}
           </div>
 
-          {task.alarmEnabled && (
-            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-              <Bell className="size-3" />
-              Reminder: {task.reminderMinutes} min before
-            </div>
+          {task.alarmEnabled ? (
+            <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
+              <Bell className="size-3.5" aria-hidden />
+              {task.reminderMinutes > 0
+                ? `Reminder ${task.reminderMinutes} min before`
+                : "Reminder at start time"}
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
+              <Bell className="size-3.5" aria-hidden />
+              No reminder
+            </p>
           )}
         </div>
 
-        <div className="flex flex-col gap-0.5 shrink-0">
+        <div className="flex flex-col gap-0.5 shrink-0" aria-label={`Actions for ${task.title}`}>
           <Link
-            to={`/edit-task/${task.id}`}
-            className="p-1.5 hover:bg-accent rounded-lg transition-colors text-muted-foreground hover:text-foreground"
+            to={`/edit/${task.id}`}
+            className={cn(iconBtn, "text-muted-foreground hover:bg-accent hover:text-foreground")}
+            aria-label={`Edit ${task.title}`}
           >
-            <Edit className="size-4" />
+            <Pencil className="size-5" />
           </Link>
           {!isCompleted && !isSkipped && (
             <>
               <button
+                type="button"
                 onClick={() => onComplete(task.id)}
-                className="p-1.5 hover:bg-emerald-500/10 rounded-lg transition-colors"
-                title="Complete"
+                className={cn(iconBtn, "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10")}
+                aria-label={`Mark ${task.title} as done`}
               >
-                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+                <CheckCircle2 className="size-5" />
               </button>
               <button
+                type="button"
                 onClick={() => onSkip(task.id)}
-                className="p-1.5 hover:bg-orange-500/10 rounded-lg transition-colors"
-                title="Skip"
+                className={cn(iconBtn, "text-orange-600 dark:text-orange-400 hover:bg-orange-500/10")}
+                aria-label={`Skip ${task.title}`}
               >
-                <SkipForward className="size-4 text-orange-500" />
+                <SkipForward className="size-5" />
               </button>
             </>
           )}
+          {isCompleted && onUndoComplete && (
+            <button
+              type="button"
+              onClick={() => onUndoComplete(task.id)}
+              className={cn(iconBtn, "text-muted-foreground hover:bg-accent")}
+              aria-label={`Undo completion of ${task.title}`}
+            >
+              <RotateCcw className="size-5" />
+            </button>
+          )}
+          {isSkipped && onUndoSkip && (
+            <button
+              type="button"
+              onClick={() => onUndoSkip(task.id)}
+              className={cn(iconBtn, "text-muted-foreground hover:bg-accent")}
+              aria-label={`Undo skipping ${task.title}`}
+            >
+              <RotateCcw className="size-5" />
+            </button>
+          )}
           <button
+            type="button"
             onClick={() => onDelete(task.id)}
-            className="p-1.5 hover:bg-destructive/10 rounded-lg transition-colors"
-            title="Delete"
+            className={cn(iconBtn, "text-destructive hover:bg-destructive/10")}
+            aria-label={`Delete ${task.title}`}
           >
-            <Trash2 className="size-4 text-destructive" />
+            <Trash2 className="size-5" />
           </button>
         </div>
       </div>
-    </div>
+    </article>
   );
 }

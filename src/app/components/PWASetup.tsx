@@ -28,6 +28,10 @@ export function PWASetup() {
     };
 
     const addLinkTag = (rel: string, href: string, sizes?: string) => {
+      const selector = sizes
+        ? `link[rel="${rel}"][href="${href}"]`
+        : `link[rel="${rel}"][href="${href}"]`;
+      if (document.querySelector(selector)) return;
       const link = document.createElement('link');
       link.rel = rel;
       link.href = href;
@@ -54,12 +58,12 @@ export function PWASetup() {
     // Favicon
     addLinkTag('icon', '/icons/icon-192x192.png');
 
-    // Viewport for mobile
+    // Viewport for mobile — keep zoom enabled for accessibility (WCAG 1.4.4).
     const viewport = document.querySelector('meta[name="viewport"]');
     if (viewport) {
       viewport.setAttribute(
         'content',
-        'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover'
+        'width=device-width, initial-scale=1, viewport-fit=cover'
       );
     }
   }, []);

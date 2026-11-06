@@ -63,7 +63,10 @@ export function applyAccentColor(hex: string) {
   const hsl = hexToHslComponents(hex);
   if (!hsl) return;
   document.documentElement.style.setProperty("--primary", hsl);
-  localStorage.setItem(ACCENT_KEY, hex);
+  document.documentElement.style.setProperty("--ring", hsl);
+  try {
+    localStorage.setItem(ACCENT_KEY, hex);
+  } catch { /* ignore */ }
 }
 
 export function restoreAccentColor() {

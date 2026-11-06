@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Task } from "../types";
-import { getItemsForDate } from "../utils/storage";
+import { getItemsForDate, TASKS_CHANGED_EVENT } from "../utils/storage";
 import { fireNotification } from "../utils/notifications";
+import { getLocalDateStr, toMinutes } from "../utils/date";
 
 export type AlarmType = "start" | "end" | "reminder";
 
@@ -11,28 +12,17 @@ export interface Alarm {
   snoozedUntil?: number; // epoch ms
 }
 
-// ✅ fixed
-function todayStr() {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function toMinutes(hhmm: string) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
+/** End alarms only fire shortly after a task ends (avoids spamming on open). */
+const END_WINDOW_MINUTES = 15;
 
 export function useScheduler() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(new Date());
   const [alarms, setAlarms] = useState<Alarm[]>([]);
-  const firedRef = useRef<Set<string>>(new Set()); // dedupe key: `${taskId}-${type}`
+  const firedRef = useRef<Set<string>>(new Set()); // dedupe key: `${taskId}-${type}-${date}`
 
   const refresh = useCallback(() => {
-    setTasks(getItemsForDate(todayStr()));
+    setTasks(getItemsForDate(getLocalDateStr()));
   }, []);
 
   useEffect(() => {
@@ -41,7 +31,14 @@ export function useScheduler() {
       setNow(new Date());
       refresh();
     }, 15_000);
-    return () => clearInterval(poll);
+    const onChange = () => refresh();
+    window.addEventListener(TASKS_CHANGED_EVENT, onChange);
+    window.addEventListener("focus", onChange);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener(TASKS_CHANGED_EVENT, onChange);
+      window.removeEventListener("focus", onChange);
+    };
   }, [refresh]);
 
   useEffect(() => {
@@ -49,15 +46,19 @@ export function useScheduler() {
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
     tasks.forEach((task) => {
+      // Reminders are opt-in.
+      if (!task.alarmEnabled) return;
+      if (task.completed || task.skipped) return;
       const start = toMinutes(task.startTime);
       const end = toMinutes(task.endTime);
+      if (Number.isNaN(start) || Number.isNaN(end)) return;
       const reminderAt = start - task.reminderMinutes;
 
       const tryFire = (type: AlarmType, condition: boolean, title: string, body: string) => {
-        const key = `${task.id}-${type}`;
+        const key = `${task.id}-${type}-${task.date}`;
         if (!condition || firedRef.current.has(key)) return;
         firedRef.current.add(key);
-        fireNotification(title, body, key);
+        void fireNotification(title, body, key, task);
         setAlarms((prev) => [...prev, { taskId: task.id, type }]);
       };
 
@@ -70,7 +71,13 @@ export function useScheduler() {
         );
       }
       tryFire("start", nowMin >= start && nowMin < end, `Now: ${task.title}`, "Time to start this.");
-      tryFire("end", nowMin >= end && !task.completed, `Time's up: ${task.title}`, "Move on to your next task.");
+      // Only fire "end" if the task ended recently (not hours ago).
+      tryFire(
+        "end",
+        nowMin >= end && nowMin < end + END_WINDOW_MINUTES && !task.completed,
+        `Time's up: ${task.title}`,
+        "Move on to your next task."
+      );
     });
 
     // clear expired snoozes so they show again
@@ -99,11 +106,19 @@ export function useScheduler() {
   }, []);
 
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const currentTask = tasks.find((t) => toMinutes(t.startTime) <= nowMin && nowMin < toMinutes(t.endTime));
-  const nextTask = tasks
-    .filter((t) => toMinutes(t.startTime) > nowMin)
+  const upcoming = tasks.filter((t) => !t.completed && !t.skipped);
+  const currentTask = upcoming.find((t) => {
+    const s = toMinutes(t.startTime);
+    const e = toMinutes(t.endTime);
+    return !Number.isNaN(s) && !Number.isNaN(e) && s <= nowMin && nowMin < e;
+  });
+  const nextTask = upcoming
+    .filter((t) => {
+      const s = toMinutes(t.startTime);
+      return !Number.isNaN(s) && s > nowMin;
+    })
     .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime))[0];
-  const minutesLeft = currentTask ? toMinutes(currentTask.endTime) - nowMin : null;
+  const minutesLeft = currentTask ? Math.max(0, toMinutes(currentTask.endTime) - nowMin) : null;
 
   return {
     tasks,
@@ -117,3 +132,5 @@ export function useScheduler() {
     refresh,
   };
 }
+
+export type Scheduler = ReturnType<typeof useScheduler>;
