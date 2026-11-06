@@ -1,11 +1,13 @@
 /**
- * Wallpaper (background) handling — app-interface-only version.
+ * Wallpaper (background) handling — scrolls-with-content version.
  *
- * The user wants the image to spread ONLY over the app interface (#root,
- * the 480px shell), not the surrounding website page (body/gutters).
- * So we paint #root only and keep body clean/default. Inside #root the
- * image spreads uniformly with fit modes:
- *   cover   — fills the interface, crops overflow (default)
+ * Painted on the scrollable `.page-shell` content (via a CSS variable set
+ * on <html>), NOT on `body` or the fixed-height `#root` shell. Because the
+ * background lives on the content itself, it scrolls WITH the page like a
+ * normal website background — unlike the old fixed/pinned paint.
+ *
+ * Fits:
+ *   cover   — fills the area, crops overflow (default)
  *   contain — whole image visible, letterboxed
  *   tile    — repeats at natural size (great for patterns)
  *   stretch — forces 100% x 100% (no crop, may distort)
@@ -103,7 +105,6 @@ export function setStoredWallpaperFit(fit: WallpaperFit) {
 function fitToStyles(fit: WallpaperFit, presetSize: string): { size: string; repeat: string } {
   switch (fit) {
     case "tile":
-      // Patterns keep their tile size; images repeat at natural size.
       return { size: presetSize === "20px 20px" ? "20px 20px" : "auto", repeat: "repeat" };
     case "contain":
       return { size: "contain", repeat: "no-repeat" };
@@ -126,12 +127,11 @@ export function applyWallpaper(value: string, fit: WallpaperFit = getStoredWallp
 
   const body = document.body;
   const root = document.getElementById("root");
-
   const presetClasses = WALLPAPER_OPTIONS.map((o) => o.className);
   body.classList.remove(...presetClasses, "has-wallpaper");
   root?.classList.remove(...presetClasses);
 
-  // Reset inline backgrounds first so "none" fully restores the default.
+  // Clear any legacy inline paints (older builds painted body/#root directly).
   for (const el of [body, root]) {
     if (!el) continue;
     el.style.backgroundImage = "";
@@ -140,10 +140,15 @@ export function applyWallpaper(value: string, fit: WallpaperFit = getStoredWallp
     el.style.backgroundRepeat = "";
     el.style.backgroundAttachment = "";
     el.style.backgroundColor = "";
+    el.style.backdropFilter = "";
   }
 
+  const html = document.documentElement;
+
   if (normalized === "none") {
-    // #root falls back to its stylesheet translucent background.
+    html.style.setProperty("--wallpaper-bg", "none");
+    html.style.setProperty("--wallpaper-size", "auto");
+    html.style.setProperty("--wallpaper-repeat", "no-repeat");
     return;
   }
 
@@ -154,22 +159,11 @@ export function applyWallpaper(value: string, fit: WallpaperFit = getStoredWallp
   const presetSize = preset ? preset.backgroundSize : "cover";
   const { size, repeat } = fitToStyles(fit, presetSize);
 
-  // Image for Settings preview (exported for the preview card).
-  const rootEl: HTMLElement | null = root;
-
-  // Paint ONLY the app interface (#root). Body stays default so any
-  // gutters outside the column look like plain website chrome, not wallpaper.
-  if (rootEl) {
-    const scrim = "linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.06) 30%, rgba(0,0,0,0.30) 100%)";
-    rootEl.style.backgroundImage = `${scrim}, ${background}`;
-    // Keep the image layer and scrim sized together so the scrim doesn't tile over the image.
-    rootEl.style.backgroundSize = size === "20px 20px" ? `${size}, ${size}` : `cover, ${size}`;
-    rootEl.style.backgroundPosition = "center, center";
-    rootEl.style.backgroundRepeat = `no-repeat, ${repeat}`;
-    rootEl.style.backgroundAttachment = "scroll, scroll";
-    rootEl.style.backgroundColor = "transparent";
-    rootEl.style.backdropFilter = "none";
-  }
+  // One CSS variable drives `.page-shell` — the scrolling content — so the
+  // wallpaper moves with you as you scroll, like a normal page background.
+  html.style.setProperty("--wallpaper-bg", background);
+  html.style.setProperty("--wallpaper-size", size);
+  html.style.setProperty("--wallpaper-repeat", repeat);
   body.classList.add("has-wallpaper");
 }
 
