@@ -1,9 +1,12 @@
+import { useEffect, useRef } from "react";
 import type { Task } from "../types";
 import type { Alarm, AlarmType } from "../hooks/useScheduler";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { BellRing, Clock, AlignLeft } from "lucide-react";
+import { BellRing, Clock, AlignLeft, Volume2, VolumeX } from "lucide-react";
 import { formatTimeRange } from "../utils/date";
+import { startAlarmRing } from "../utils/alarmTones";
+import { useState } from "react";
 
 export interface AlarmDialogProps {
   alarm: Alarm;
@@ -22,26 +25,50 @@ const HEADINGS: Record<AlarmType, string> = {
 };
 
 export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSkip, queueCount = 1 }: AlarmDialogProps) {
+  const [muted, setMuted] = useState(false);
+  const stopRef = useRef<(() => void) | null>(null);
+
+  // Ring loudly in a loop while this dialog is open. Stops on any action.
+  useEffect(() => {
+    if (!task || muted) return;
+    const stop = startAlarmRing();
+    stopRef.current = stop;
+    return () => {
+      stop();
+      stopRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.id, alarm.type, muted]);
+
   if (!task) return null;
 
-  const handleComplete = () => {
+  const silenceAnd = (fn: () => void) => () => {
+    stopRef.current?.();
+    setMuted(true);
+    fn();
+  };
+  const handleComplete = silenceAnd(() => {
     onComplete?.(task.id);
     onDismiss(task.id, alarm.type);
-  };
-  const handleSkip = () => {
+  });
+  const handleSkip = silenceAnd(() => {
     onSkip?.(task.id);
     onDismiss(task.id, alarm.type);
-  };
+  });
 
   return (
-    <Dialog open onOpenChange={(open: boolean) => !open && onDismiss(task.id, alarm.type)}>
+    <Dialog open onOpenChange={(open: boolean) => !open && silenceAnd(() => onDismiss(task.id, alarm.type))()}>
       <DialogContent aria-describedby="alarm-desc">
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
-            <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white">
+            <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white animate-pulse">
               <BellRing className="size-5" aria-hidden />
             </span>
             <DialogTitle className="text-left">{HEADINGS[alarm.type]}</DialogTitle>
+            <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400">
+              {muted ? <VolumeX className="size-4" aria-hidden /> : <Volume2 className="size-4" aria-hidden />}
+              {muted ? "Muted" : "Ringing…"}
+            </span>
           </div>
           <DialogDescription id="alarm-desc" className="text-left">
             {queueCount > 1 && (
@@ -49,6 +76,9 @@ export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSk
                 {queueCount} reminders waiting — showing one at a time
               </span>
             )}
+            <span className="block text-xs font-semibold text-rose-600 dark:text-rose-400">
+              🔔 Ringing — tap Snooze / Done / Skip to stop.
+            </span>
           </DialogDescription>
           <div className="text-left space-y-2 pt-1">
             <p className="font-semibold text-foreground text-lg">{task.title}</p>
@@ -76,28 +106,24 @@ export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSk
           <Button
             variant="outline"
             className="min-h-11"
-            onClick={() => onSnooze(task.id, alarm.type, 5)}
+            onClick={silenceAnd(() => onSnooze(task.id, alarm.type, 5))}
           >
             Snooze 5 min
           </Button>
           <Button
             variant="outline"
             className="min-h-11"
-            onClick={() => onSnooze(task.id, alarm.type, 10)}
+            onClick={silenceAnd(() => onSnooze(task.id, alarm.type, 10))}
           >
             Snooze 10 min
           </Button>
-          <Button
-            variant="ghost"
-            className="min-h-11"
-            onClick={handleSkip}
-          >
+          <Button variant="ghost" className="min-h-11" onClick={handleSkip}>
             Skip
           </Button>
           <Button className="min-h-11" onClick={handleComplete}>
             Mark done ✓
           </Button>
-          <Button variant="ghost" className="min-h-11" onClick={() => onDismiss(task.id, alarm.type)}>
+          <Button variant="ghost" className="min-h-11" onClick={silenceAnd(() => onDismiss(task.id, alarm.type))}>
             Got it
           </Button>
         </DialogFooter>

@@ -18,6 +18,7 @@ import { Diary } from "./app/pages/Diary";
 import { DoodleDrawer } from "./app/pages/DoodleDrawer";
 import { MusicPlayer } from "./app/pages/MusicPlayer";
 import { completeItem, skipItem } from "./app/utils/storage";
+import { installAudioUnlockListeners } from "./app/utils/alarmTones";
 import { Compass } from "lucide-react";
 
 function ScrollRestoration() {
@@ -86,6 +87,7 @@ function Alarms() {
 }
 
 function AppShell() {
+  useEffect(() => installAudioUnlockListeners(), []);
   return (
     <>
       <a href="#main" className="skip-link">Skip to main content</a>

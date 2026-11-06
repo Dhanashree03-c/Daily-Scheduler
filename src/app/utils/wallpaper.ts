@@ -1,16 +1,11 @@
 /**
- * Wallpaper (background) handling — uniform spread version.
+ * Wallpaper (background) handling — app-interface-only version.
  *
- * Problem before: the same image/gradient was painted TWICE with `cover`
- * (once on `body`, once on the 480px `#root` column). Each container has a
- * different aspect ratio, so the image restarted at the column edges —
- * visible seams, not one continuous background.
- *
- * Fix: paint ONCE on `body` with `background-attachment: fixed` so the
- * image/gradient is continuous across the whole viewport, and make `#root`
- * transparent so the single image shows through uniformly underneath the
- * (opaque) cards. A fit mode controls how it spreads:
- *   cover   — fills the area, crops overflow (default, most impressive)
+ * The user wants the image to spread ONLY over the app interface (#root,
+ * the 480px shell), not the surrounding website page (body/gutters).
+ * So we paint #root only and keep body clean/default. Inside #root the
+ * image spreads uniformly with fit modes:
+ *   cover   — fills the interface, crops overflow (default)
  *   contain — whole image visible, letterboxed
  *   tile    — repeats at natural size (great for patterns)
  *   stretch — forces 100% x 100% (no crop, may distort)
@@ -159,15 +154,14 @@ export function applyWallpaper(value: string, fit: WallpaperFit = getStoredWallp
   const presetSize = preset ? preset.backgroundSize : "cover";
   const { size, repeat } = fitToStyles(fit, presetSize);
 
-  // Paint ONCE on body, fixed to the viewport → one continuous spread.
-  body.style.backgroundImage = background;
-  body.style.backgroundSize = size;
-  body.style.backgroundPosition = "center";
-  body.style.backgroundRepeat = repeat;
-  body.style.backgroundAttachment = "fixed";
-
-  // #root transparent so the single body image shows through uniformly.
+  // Paint ONLY the app interface (#root). Body stays default so any
+  // gutters outside the column look like plain website chrome, not wallpaper.
   if (root) {
+    root.style.backgroundImage = background;
+    root.style.backgroundSize = size;
+    root.style.backgroundPosition = "center";
+    root.style.backgroundRepeat = repeat;
+    root.style.backgroundAttachment = "scroll";
     root.style.backgroundColor = "transparent";
     root.style.backdropFilter = "none";
   }

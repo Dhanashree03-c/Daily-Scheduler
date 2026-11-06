@@ -15,16 +15,23 @@ interface Track {
 const SEED_TRACKS: Track[] = [
   {
     id: "seed-1",
-    title: "SoundHelix Song 1",
-    artist: "SoundHelix (sample)",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    title: "Hello Day",
+    artist: "Bundled sample 🎵 (works offline, no URL needed)",
+    url: "/audio/hello-day.wav",
     source: "url",
   },
   {
     id: "seed-2",
-    title: "SoundHelix Song 2",
-    artist: "SoundHelix (sample)",
-    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    title: "Calm Evening",
+    artist: "Bundled sample 🎵 (works offline, no URL needed)",
+    url: "/audio/calm-evening.wav",
+    source: "url",
+  },
+  {
+    id: "seed-3",
+    title: "Focus Flow",
+    artist: "Bundled sample 🎵 (works offline, no URL needed)",
+    url: "/audio/focus-flow.wav",
     source: "url",
   },
 ];
@@ -37,7 +44,9 @@ function loadTracks(): Track[] {
     if (!Array.isArray(parsed) || parsed.length === 0) return SEED_TRACKS;
     // Drop persisted blob: URLs — they die on reload and mislead the user.
     const playable = parsed.filter((t) => t.url && !t.url.startsWith("blob:") && !t.url.includes("drive.google.com"));
-    return playable.length ? playable : SEED_TRACKS;
+    // Always include the bundled offline samples (no URL ever needed).
+    const missing = SEED_TRACKS.filter((s) => !playable.some((t) => t.id === s.id));
+    return [...missing, ...playable];
   } catch {
     return SEED_TRACKS;
   }
@@ -51,7 +60,9 @@ function formatTime(time: number): string {
 }
 
 function isLikelyAudioUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim()) && !url.includes("drive.google.com");
+  const u = url.trim();
+  if (u.startsWith("/audio/") || u.startsWith("/")) return true;
+  return /^https?:\/\//i.test(u) && !u.includes("drive.google.com");
 }
 
 export function MusicPlayer() {

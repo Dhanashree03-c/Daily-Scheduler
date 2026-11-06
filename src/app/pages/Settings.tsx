@@ -267,6 +267,14 @@ export function Settings() {
         <p className="text-xs text-muted-foreground mt-2">
           Your tasks, notes, and goals live on this device — no account or sync needed. After saving a task, a preview pops above the bottom bar and a system notification fires if allowed.
         </p>
+        <div className="mt-3 rounded-2xl bg-accent p-3 text-xs leading-relaxed">
+          <p className="font-bold">📱 Run it like a real Android app:</p>
+          <ol className="list-decimal pl-4 mt-1 space-y-0.5 text-muted-foreground">
+            <li>Open your deployed link in <strong>Chrome</strong> (HTTPS) → tap <strong>⋮ → Install app / Add to Home screen</strong>.</li>
+            <li>Grant <strong>Notifications</strong> when asked, then in Android <em>Settings → Apps → DayFlow → Notifications</em> allow <strong>Sounds + Vibration</strong>.</li>
+            <li>Keep the installed app open (or the browser) — see Alarm behaviour below for on-time ringing.</li>
+          </ol>
+        </div>
       </section>
 
       <section className="settings-card" aria-label="Alarm behaviour">

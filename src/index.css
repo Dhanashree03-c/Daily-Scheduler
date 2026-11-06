@@ -276,11 +276,12 @@ body.has-wallpaper {
   background-repeat: no-repeat;
 }
 
-/* JS paints ONE continuous background on body (fixed to the viewport, see
-   utils/wallpaper.ts). #root stays transparent so the image spreads
-   uniformly underneath the whole app with no seam at the column edges. */
+/* Wallpaper paints ONLY the app interface (#root) — body/gutters stay
+   default so it feels like an app window, not a website page. */
+body.has-wallpaper {
+  background-color: hsl(var(--background));
+}
 body.has-wallpaper #root {
-  background: transparent;
   backdrop-filter: none;
 }
 

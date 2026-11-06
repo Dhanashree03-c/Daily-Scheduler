@@ -80,6 +80,65 @@ function tone(
   osc.stop(time + dur + 0.05);
 }
 
+/**
+ * Unlock audio on the first user gesture (tap/key). Browsers suspend
+ * AudioContext until a gesture — the alarm fires later with no gesture,
+ * so we warm it up on app open and on Save. Returns true if running.
+ */
+export function unlockAlarmAudio(): boolean {
+  const ac = getCtx();
+  if (!ac) return false;
+  if (ac.state === "suspended") void ac.resume();
+  return ac.state === "running";
+}
+
+export function installAudioUnlockListeners() {
+  const unlock = () => unlockAlarmAudio();
+  window.addEventListener("pointerdown", unlock, { capture: true });
+  window.addEventListener("keydown", unlock, { capture: true });
+  window.addEventListener("touchstart", unlock, { capture: true });
+  return () => {
+    window.removeEventListener("pointerdown", unlock, { capture: true });
+    window.removeEventListener("keydown", unlock, { capture: true });
+    window.removeEventListener("touchstart", unlock, { capture: true });
+  };
+}
+
+/**
+ * LOUD looping alarm ring until `stop()` is called — the alarm that rings.
+ * Loops the selected melody every ~2.2s + vibrates (where supported).
+ * Returns a stop function; safe to call stop() repeatedly.
+ */
+export function startAlarmRing(id: AlarmToneId = getStoredAlarmTone()): () => void {
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    if (loopTimer) window.clearInterval(loopTimer);
+    try {
+      navigator.vibrate?.(0);
+    } catch {
+      /* unsupported */
+    }
+  };
+  let loopTimer: number | undefined;
+  try {
+    navigator.vibrate?.([300, 150, 300, 150, 300]);
+    playAlarmTone(id, 0.9);
+    loopTimer = window.setInterval(() => {
+      if (stopped) return;
+      try {
+        navigator.vibrate?.([200, 100, 200]);
+      } catch {
+        /* ignore */
+      }
+      playAlarmTone(id, 0.9);
+    }, 2300);
+  } catch {
+    /* audio blocked — visual alarm still shows */
+  }
+  return stop;
+}
+
 /** Play a one-shot preview of the tone (~2s). Safe to call without a gesture — it no-ops if blocked. */
 export function playAlarmTone(id: AlarmToneId = getStoredAlarmTone(), volume = 0.5) {
   const ac = getCtx();
