@@ -10,11 +10,15 @@ import { syncAlarmsToServiceWorker, requestWakeLock } from "../utils/alarmSchedu
 import {
   applyWallpaper,
   getStoredWallpaper,
+  getStoredWallpaperFit,
   isPresetWallpaper,
   isValidWallpaperUrl,
   preloadWallpaperImage,
+  WALLPAPER_FITS,
   WALLPAPER_OPTIONS,
+  type WallpaperFit,
 } from "../utils/wallpaper";
+import { ALARM_TONES, getStoredAlarmTone, playAlarmTone, setStoredAlarmTone, type AlarmToneId } from "../utils/alarmTones";
 import { cn } from "../components/ui/utils";
 
 const DEFAULT_ACCENT = "#7c3aed";
@@ -28,6 +32,8 @@ export function Settings() {
   });
   const [applyingWallpaper, setApplyingWallpaper] = useState(false);
   const isCustomWallpaper = wallpaper !== "none" && !isPresetWallpaper(wallpaper);
+  const [wallpaperFit, setWallpaperFit] = useState<WallpaperFit>(() => getStoredWallpaperFit());
+  const [alarmTone, setAlarmTone] = useState<AlarmToneId>(() => getStoredAlarmTone());
   const [customColor, setCustomColor] = useState<string>(() => {
     try {
       return localStorage.getItem("customColor") || DEFAULT_ACCENT;
@@ -70,10 +76,14 @@ export function Settings() {
   }, [theme]);
 
   useEffect(() => {
-    // Centralized: paints body + #root inline so it is visible everywhere,
-    // persists, and matches what initWallpaper() does on reload.
-    applyWallpaper(wallpaper);
-  }, [wallpaper]);
+    // Centralized: paints one continuous background on body and matches
+    // what initWallpaper() does on reload.
+    applyWallpaper(wallpaper, wallpaperFit);
+  }, [wallpaper, wallpaperFit]);
+
+  useEffect(() => {
+    setStoredAlarmTone(alarmTone);
+  }, [alarmTone]);
 
   useEffect(() => {
     applyAccentColor(customColor);
@@ -279,6 +289,50 @@ export function Settings() {
             Test alarm 🔔
           </button>
         </div>
+        <div className="mt-4 pt-3 border-t border-border">
+          <h3 className="text-sm font-bold mb-2">Alarm tones 🎵</h3>
+          <p className="text-xs text-muted-foreground mb-3">Synthesized live — no files needed. Plays when an alarm pops in the app. (OS notifications keep the system sound.)</p>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Alarm tone">
+            {ALARM_TONES.map((tone) => {
+              const selected = alarmTone === tone.id;
+              return (
+                <div
+                  key={tone.id}
+                  className={cn(
+                    "rounded-2xl border-2 p-3 transition-all",
+                    selected ? "border-primary bg-accent" : "border-border hover:border-primary/40"
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setAlarmTone(tone.id);
+                      playAlarmTone(tone.id);
+                    }}
+                    className="w-full text-left"
+                  >
+                    <span className={cn("flex size-9 items-center justify-center rounded-xl text-white bg-gradient-to-br mb-2", tone.gradient)}>
+                      <span aria-hidden className="text-lg">{tone.emoji}</span>
+                    </span>
+                    <span className="block text-sm font-bold">{tone.name}{selected ? " ✓" : ""}</span>
+                    <span className="block text-xs text-muted-foreground mt-0.5 leading-snug">{tone.blurb}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => playAlarmTone(tone.id)}
+                    className="min-h-9 w-full mt-2 px-2 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90"
+                    aria-label={`Preview ${tone.name} tone`}
+                  >
+                    ▶ Preview
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
           Honest limit: without a server doing Web Push, no local-only web page can wake the OS after the browser
           itself is fully closed &amp; killed. For a guaranteed ring in that case you&apos;d need a push server or a native
@@ -390,7 +444,33 @@ export function Settings() {
             </button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-3">Tap a style above — it paints instantly behind every tab, and survives reloads.</p>
+        <p className="text-xs text-muted-foreground mt-3">Tap a style above — it paints as one seamless background behind every tab (no seams), and survives reloads.</p>
+        <div className="mt-4">
+          <p id="wallpaper-fit-label" className="text-sm font-bold mb-2">How it spreads 🖼️</p>
+          <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-labelledby="wallpaper-fit-label">
+            {WALLPAPER_FITS.map((fit) => (
+              <button
+                key={fit.id}
+                type="button"
+                role="radio"
+                aria-checked={wallpaperFit === fit.id}
+                aria-pressed={wallpaperFit === fit.id}
+                title={fit.blurb}
+                onClick={() => {
+                  setWallpaperFit(fit.id);
+                  toast.success(`${fit.name} applied`, { description: fit.blurb });
+                }}
+                className={cn(
+                  "min-h-11 px-2 py-2 rounded-xl border-2 text-xs font-bold transition-all",
+                  wallpaperFit === fit.id ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border hover:bg-accent"
+                )}
+              >
+                {fit.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">{WALLPAPER_FITS.find((f) => f.id === wallpaperFit)?.blurb}</p>
+        </div>
         {isCustomWallpaper && (
           <button
             type="button"

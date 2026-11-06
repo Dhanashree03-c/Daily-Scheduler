@@ -3,6 +3,7 @@ import type { Task } from "../types";
 import { getItemsForDate, getAllItems, TASKS_CHANGED_EVENT } from "../utils/storage";
 import { fireNotification } from "../utils/notifications";
 import { syncAlarmsToServiceWorker, requestWakeLock, releaseWakeLock } from "../utils/alarmScheduler";
+import { playAlarmTone } from "../utils/alarmTones";
 import { getLocalDateStr, toMinutes } from "../utils/date";
 
 export type AlarmType = "start" | "end" | "reminder";
@@ -97,6 +98,8 @@ export function useScheduler() {
         if (prev.some((a) => a.taskId === taskId && a.type === type)) return prev;
         return [...prev, { taskId, type: type as AlarmType }];
       });
+      // Ring the in-app tone too — the worker can't play audio, only notify.
+      playAlarmTone();
       // Also refresh so the task list is current.
       refresh();
     };

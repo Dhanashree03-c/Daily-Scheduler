@@ -1,5 +1,6 @@
 import type { Task } from "../types";
 import { showNotificationWidget } from "./notifyWidget";
+import { playAlarmTone } from "./alarmTones";
 import { formatTime } from "./date";
 
 export async function requestNotificationPermission(): Promise<boolean> {
@@ -29,6 +30,8 @@ export async function fireNotification(title: string, body: string, tag?: string
   if (task) {
     showNotificationWidget({ task, title, body, whenLabel: alarmWhenLabel(task), preview: false });
   }
+  // Ring the picked in-app tone (OS notifications keep their system sound).
+  playAlarmTone();
 
   // 2) OS notification (if permitted).
   if (!("Notification" in window) || Notification.permission !== "granted") return;

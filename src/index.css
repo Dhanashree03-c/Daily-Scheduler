@@ -276,10 +276,11 @@ body.has-wallpaper {
   background-repeat: no-repeat;
 }
 
-/* JS paints the wallpaper inline on #root (see utils/wallpaper.ts) so it is
-   actually visible inside the 480px column. Keep it clean here: no glass
-   overlay, no blur — the old glass hid presets/custom images. */
+/* JS paints ONE continuous background on body (fixed to the viewport, see
+   utils/wallpaper.ts). #root stays transparent so the image spreads
+   uniformly underneath the whole app with no seam at the column edges. */
 body.has-wallpaper #root {
+  background: transparent;
   backdrop-filter: none;
 }
 
@@ -505,6 +506,60 @@ body.has-wallpaper #root {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes eq-bounce {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.now-playing-disc {
+  animation: spin-slow 7s linear infinite;
+}
+
+.now-playing-disc.paused {
+  animation-play-state: paused;
+}
+
+.eq-bar {
+  transform-origin: bottom;
+  animation: eq-bounce 0.9s ease-in-out infinite;
+}
+
+.eq-bar:nth-child(2) { animation-delay: 0.15s; }
+.eq-bar:nth-child(3) { animation-delay: 0.3s; }
+.eq-bar:nth-child(4) { animation-delay: 0.45s; }
+
+.shimmer-text {
+  background: linear-gradient(90deg, #fff 40%, rgba(255,255,255,0.65) 50%, #fff 60%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+.card-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -8px hsl(var(--foreground) / 0.18);
 }
 
 @media (prefers-reduced-motion: reduce) {

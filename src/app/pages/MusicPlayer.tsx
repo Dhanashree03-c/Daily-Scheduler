@@ -1,13 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Plus, Trash2, Music2, AlertTriangle } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Plus, Trash2, Music2, AlertTriangle, Shuffle, Repeat, Repeat1, Disc3, HardDrive, Upload, Info } from "lucide-react";
 import { cn } from "../components/ui/utils";
+import { saveAudioBlob, loadAudioBlob, removeAudioBlob, audioStorageSize, formatBytes } from "../utils/musicLibrary";
 
 interface Track {
   id: string;
   title: string;
   artist: string;
   url: string;
+  source?: "url" | "upload";
 }
 
 const SEED_TRACKS: Track[] = [
@@ -16,6 +18,14 @@ const SEED_TRACKS: Track[] = [
     title: "SoundHelix Song 1",
     artist: "SoundHelix (sample)",
     url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+    source: "url",
+  },
+  {
+    id: "seed-2",
+    title: "SoundHelix Song 2",
+    artist: "SoundHelix (sample)",
+    url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+    source: "url",
   },
 ];
 
@@ -55,12 +65,50 @@ export function MusicPlayer() {
   const [showAddTrack, setShowAddTrack] = useState(false);
   const [newTrack, setNewTrack] = useState({ title: "", artist: "", url: "" });
   const [loadError, setLoadError] = useState("");
+  const [shuffle, setShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<"off" | "all" | "one">("off");
+  const [objectUrls, setObjectUrls] = useState<Record<string, string>>({});
+  const [storageBytes, setStorageBytes] = useState(0);
+  const [uploading, setUploading] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
+  // Hydrate uploaded files from IndexedDB → playable object URLs.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const uploads = tracks.filter((t) => t.source === "upload");
+      for (const t of uploads) {
+        const blob = await loadAudioBlob(t.id);
+        if (!blob) {
+          if (!cancelled) {
+            toast.error("Song file missing", { description: `"${t.title}" isn't on this device anymore — remove it and re-upload.` });
+          }
+          continue;
+        }
+        const url = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          continue;
+        }
+        setObjectUrls((prev) => {
+          const old = prev[t.id];
+          if (old) URL.revokeObjectURL(old);
+          return { ...prev, [t.id]: url };
+        });
+      }
+      const size = await audioStorageSize();
+      if (!cancelled) setStorageBytes(size);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try {
-      // Never persist blob: URLs.
+      // Persist metadata only (URLs + upload sentinels), never blob: URLs.
       const persistable = tracks.filter((t) => !t.url.startsWith("blob:"));
       localStorage.setItem("musicTracks", JSON.stringify(persistable));
     } catch {
@@ -68,19 +116,40 @@ export function MusicPlayer() {
     }
   }, [tracks]);
 
+  const nextIndex = useCallback(
+    (from: number) => {
+      if (tracks.length <= 1) return from;
+      if (shuffle) {
+        let n = Math.floor(Math.random() * tracks.length);
+        if (n === from) n = (n + 1) % tracks.length;
+        return n;
+      }
+      if (from < tracks.length - 1) return from + 1;
+      return repeatMode === "all" ? 0 : from;
+    },
+    [shuffle, repeatMode, tracks.length]
+  );
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
     const handleEnded = () => {
-      if (currentTrackIndex < tracks.length - 1) {
-        setCurrentTrackIndex((prev) => Math.min(prev + 1, tracks.length - 1));
+      if (repeatMode === "one") {
+        audio.currentTime = 0;
+        void audio.play().catch(() => undefined);
+        return;
+      }
+      const n = nextIndex(currentTrackIndex);
+      if (n !== currentTrackIndex) {
+        setCurrentTrackIndex(n);
       } else {
         setIsPlaying(false);
       }
     };
     const handleError = () => {
+      if (!audio.src) return;
       setIsPlaying(false);
       setLoadError("This track couldn't play. Check the link or try another song.");
       toast.error("Couldn't play this track", { description: "The audio link may be broken or blocked." });
@@ -99,13 +168,18 @@ export function MusicPlayer() {
       audio.removeEventListener("error", handleError);
       audio.removeEventListener("playing", handlePlaying);
     };
-  }, [currentTrackIndex, tracks.length]);
+  }, [currentTrackIndex, tracks.length, nextIndex, repeatMode]);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = isMuted ? 0 : volume;
   }, [volume, isMuted]);
 
   const currentTrack = tracks[currentTrackIndex];
+  const playbackSrc = currentTrack
+    ? currentTrack.source === "upload"
+      ? objectUrls[currentTrack.id] ?? ""
+      : currentTrack.url
+    : "";
 
   useEffect(() => {
     // Reset clock when switching tracks.
@@ -116,7 +190,7 @@ export function MusicPlayer() {
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentTrack) return;
+    if (!audio || !currentTrack || !playbackSrc) return;
     if (isPlaying) {
       audio.play().catch(() => {
         setIsPlaying(false);
@@ -125,7 +199,8 @@ export function MusicPlayer() {
     } else {
       audio.pause();
     }
-  }, [isPlaying, currentTrackIndex, currentTrack]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPlaying, currentTrackIndex, playbackSrc]);
 
   const togglePlayPause = async () => {
     if (!currentTrack) return;
@@ -146,7 +221,8 @@ export function MusicPlayer() {
   };
 
   const skipForward = () => {
-    if (currentTrackIndex < tracks.length - 1) setCurrentTrackIndex((p) => p + 1);
+    const n = nextIndex(currentTrackIndex);
+    if (n !== currentTrackIndex) setCurrentTrackIndex(n);
   };
   const skipBackward = () => {
     // At start, restart; otherwise previous.
@@ -183,6 +259,7 @@ export function MusicPlayer() {
       title,
       artist: newTrack.artist.trim() || "Unknown artist",
       url,
+      source: "url",
     };
     setTracks([...tracks, track]);
     setNewTrack({ title: "", artist: "", url: "" });
@@ -190,11 +267,58 @@ export function MusicPlayer() {
     toast.success("Track added 🎵", { description: `"${title}" is in your playlist.` });
   };
 
+  const addUploadedFile = async (file: File) => {
+    if (!file.type.startsWith("audio/")) {
+      toast.error("Pick an audio file", { description: "MP3, OGG, WAV, or M4A work best." });
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("That file is large (over 20 MB)", { description: "Pick a smaller song — device storage is limited." });
+      return;
+    }
+    setUploading(true);
+    try {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await saveAudioBlob(id, file);
+      const track: Track = {
+        id,
+        title: newTrack.title.trim() || file.name.replace(/\.[^.]+$/, ""),
+        artist: newTrack.artist.trim() || "Uploaded • on this device",
+        url: `idb:${id}`,
+        source: "upload",
+      };
+      setTracks([...tracks, track]);
+      const url = URL.createObjectURL(file);
+      setObjectUrls((prev) => ({ ...prev, [id]: url }));
+      setStorageBytes(await audioStorageSize());
+      setNewTrack({ title: "", artist: "", url: "" });
+      setShowAddTrack(false);
+      toast.success("Saved offline 💾", {
+        description: `"${track.title}" lives on this device (IndexedDB) — plays without internet.`,
+      });
+    } catch {
+      toast.error("Couldn't save file", { description: "Device storage may be full." });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const deleteTrack = (id: string) => {
     const idx = tracks.findIndex((t) => t.id === id);
     const removed = tracks[idx];
     const next = tracks.filter((t) => t.id !== id);
     setTracks(next);
+    if (removed?.source === "upload") {
+      void removeAudioBlob(id);
+      setObjectUrls((prev) => {
+        const url = prev[id];
+        if (url) URL.revokeObjectURL(url);
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+      void audioStorageSize().then(setStorageBytes);
+    }
     if (idx === currentTrackIndex) {
       setIsPlaying(false);
       setCurrentTrackIndex(next.length ? Math.min(idx, next.length - 1) : 0);
@@ -203,11 +327,28 @@ export function MusicPlayer() {
     }
     toast.error("Track removed", {
       description: removed ? `"${removed.title}" removed.` : undefined,
-      action: { label: "Undo", onClick: () => removed && setTracks((prev) => { const copy = [...prev]; copy.splice(Math.min(idx, copy.length), 0, removed); return copy; }) },
+      action: {
+        label: "Undo",
+        onClick: () => {
+          if (!removed) return;
+          setTracks((prev) => {
+            const copy = [...prev];
+            copy.splice(Math.min(idx, copy.length), 0, removed);
+            return copy;
+          });
+          if (removed.source === "upload") {
+            void loadAudioBlob(id).then((blob) => {
+              if (blob) setObjectUrls((prev) => ({ ...prev, [id]: URL.createObjectURL(blob) }));
+            });
+          }
+        },
+      },
     });
   };
 
   const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const hue = currentTrack ? [...currentTrack.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360 : 262;
+  const heroBg = `linear-gradient(135deg, hsl(${hue} 85% 52%) 0%, hsl(${(hue + 60) % 360} 85% 58%) 55%, hsl(${(hue + 120) % 360} 90% 60%) 100%)`;
 
   return (
     <main className="page-shell max-w-2xl mx-auto" aria-label="Music player">
@@ -222,15 +363,59 @@ export function MusicPlayer() {
       </div>
 
       {currentTrack ? (
-        <section className="rounded-3xl p-6 text-white shadow-xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-amber-400" aria-label="Now playing">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-28 h-28 bg-white/20 rounded-full flex items-center justify-center backdrop-blur ring-4 ring-white/20">
-              <Music2 className={cn("size-14", isPlaying && "animate-pulse")} aria-hidden />
+        <section
+          className="rounded-3xl p-6 text-white shadow-2xl relative overflow-hidden"
+          style={{ background: heroBg }}
+          aria-label="Now playing"
+        >
+          <div className="absolute inset-0 bg-gradient-to-b from-white/25 via-transparent to-black/20 pointer-events-none" aria-hidden />
+          <div className="relative">
+            <div className="flex items-start justify-between gap-2 mb-4">
+              <span className="text-xs font-bold uppercase tracking-widest bg-white/20 rounded-full px-2.5 py-1 backdrop-blur">
+                {currentTrack.source === "upload" ? "💾 On device" : "☁️ Streaming"} · {tracks.length} songs
+              </span>
+              <div className="flex gap-1" role="group" aria-label="Playback modes">
+                <button
+                  type="button"
+                  onClick={() => setShuffle((s) => !s)}
+                  aria-pressed={shuffle}
+                  aria-label="Shuffle"
+                  title="Shuffle"
+                  className={cn("min-w-9 min-h-9 flex items-center justify-center rounded-full backdrop-blur transition-all", shuffle ? "bg-white text-fuchsia-600" : "bg-white/20 hover:bg-white/30")}
+                >
+                  <Shuffle className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRepeatMode((m) => (m === "off" ? "all" : m === "all" ? "one" : "off"))}
+                  aria-pressed={repeatMode !== "off"}
+                  aria-label={repeatMode === "one" ? "Repeat one (on)" : repeatMode === "all" ? "Repeat all (on)" : "Repeat (off)"}
+                  title={repeatMode === "one" ? "Repeat one" : repeatMode === "all" ? "Repeat all" : "Repeat off"}
+                  className={cn("min-w-9 min-h-9 flex items-center justify-center rounded-full backdrop-blur transition-all", repeatMode !== "off" ? "bg-white text-fuchsia-600" : "bg-white/20 hover:bg-white/30")}
+                >
+                  {repeatMode === "one" ? <Repeat1 className="size-4" /> : <Repeat className="size-4" />}
+                </button>
+              </div>
             </div>
-          </div>
+            <div className="flex items-center justify-center mb-3 relative">
+              <div className={cn("w-32 h-32 rounded-full bg-black/25 flex items-center justify-center ring-4 ring-white/25 shadow-xl now-playing-disc", !isPlaying && "paused")}>
+                <Disc3 className="size-20" aria-hidden />
+              </div>
+              <span className="absolute -bottom-1 bg-white/20 backdrop-blur rounded-full px-2.5 py-1 text-xs font-bold">
+                {isPlaying ? "▶ Playing" : "❚❚ Paused"} · {currentTrack.source === "upload" ? "Offline-ready" : "Online"}
+              </span>
+            </div>
+            {isPlaying && (
+              <div className="flex items-end justify-center gap-1 h-6 mb-2" aria-hidden>
+                <span className="eq-bar w-1.5 h-full bg-white rounded-full" />
+                <span className="eq-bar w-1.5 h-full bg-white rounded-full" />
+                <span className="eq-bar w-1.5 h-full bg-white rounded-full" />
+                <span className="eq-bar w-1.5 h-full bg-white rounded-full" />
+              </div>
+            )}
 
-          <h2 className="text-xl font-bold text-center mb-1 break-words">{currentTrack.title}</h2>
-          <p className="text-white/85 text-center mb-5 text-sm">{currentTrack.artist}</p>
+            <h2 className="text-xl font-extrabold text-center mb-1 break-words shimmer-text">{currentTrack.title}</h2>
+            <p className="text-white/90 text-center mb-5 text-sm font-medium">{currentTrack.artist}</p>
 
           {loadError && (
             <p role="alert" className="flex items-start gap-2 text-sm bg-black/25 rounded-xl px-3 py-2 mb-3">
@@ -301,6 +486,7 @@ export function MusicPlayer() {
             />
             <span className="text-xs w-8 text-right tabular-nums" aria-hidden>{isMuted ? "0%" : `${Math.round(volume * 100)}%`}</span>
           </div>
+          </div>
         </section>
       ) : (
         <div className="empty-state" role="status">
@@ -309,7 +495,7 @@ export function MusicPlayer() {
         </div>
       )}
 
-      <audio ref={audioRef} src={currentTrack?.url} preload="metadata" />
+      <audio ref={audioRef} src={playbackSrc || undefined} preload="metadata" />
 
       <section className="bg-card border border-border rounded-2xl p-4 shadow-sm" aria-label="Playlist">
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -355,7 +541,7 @@ export function MusicPlayer() {
               />
             </div>
             <div>
-              <label htmlFor="track-url" className="text-sm font-semibold block mb-1">Audio link (MP3 / OGG / WAV) *</label>
+              <label htmlFor="track-url" className="text-sm font-semibold block mb-1">Audio link (MP3 / OGG / WAV)</label>
               <input
                 id="track-url"
                 type="url"
@@ -365,6 +551,25 @@ export function MusicPlayer() {
                 className="w-full min-h-11 px-3 py-2.5 border border-border rounded-xl bg-input-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
               />
               <p className="text-xs text-muted-foreground mt-1">Paste a direct audio file link — Google Drive share pages won&apos;t play.</p>
+            </div>
+            <div>
+              <label htmlFor="track-file" className="text-sm font-semibold flex items-center gap-1.5 mb-1">
+                <Upload className="size-4" aria-hidden /> Or upload your own file 💾
+              </label>
+              <input
+                id="track-file"
+                type="file"
+                accept="audio/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void addUploadedFile(file);
+                  e.target.value = "";
+                }}
+                className="w-full min-h-11 px-3 py-2.5 border border-dashed border-border rounded-xl bg-input-background text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:bg-primary file:text-primary-foreground file:text-xs file:font-bold file:border-0"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {uploading ? "Saving to device…" : "Saved on this device (IndexedDB) — plays offline, survives reloads. Max 20 MB."}
+              </p>
             </div>
             <button type="submit" className="w-full min-h-11 bg-primary text-primary-foreground py-2.5 rounded-xl font-semibold hover:bg-primary/90">
               Add to playlist 🎵
@@ -401,7 +606,9 @@ export function MusicPlayer() {
                       </span>
                       <span className="min-w-0">
                         <span className="block font-medium truncate">{track.title}</span>
-                        <span className="block text-xs text-muted-foreground truncate">{track.artist}</span>
+                        <span className="block text-xs text-muted-foreground truncate">
+                          {track.artist}{track.source === "upload" ? " • 💾 offline" : " • ☁️ link"}
+                        </span>
                       </span>
                       {active && <span className="ml-auto text-xs font-semibold text-primary shrink-0">{isPlaying ? "Playing" : "Paused"}</span>}
                     </button>
@@ -419,6 +626,22 @@ export function MusicPlayer() {
             })}
           </ul>
         )}
+      </section>
+
+      <section className="settings-card" aria-label="Where music lives">
+        <h2 className="text-base font-bold flex items-center gap-2 mb-2">
+          <Info className="size-5 text-primary" aria-hidden /> Do you need a database for music?
+        </h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">No — not for this app.</strong> Link songs are just tiny notes
+          (title/artist/URL) and stream on tap. Uploads live <strong className="text-foreground">on this device</strong>
+          in IndexedDB ({formatBytes(storageBytes)} used) so they survive reloads and play offline.
+          You&apos;d only need a backend database for cloud sync or sharing playlists across devices.
+        </p>
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+          <HardDrive className="size-4" aria-hidden />
+          {storageBytes > 0 ? `On-device library: ${formatBytes(storageBytes)}` : "On-device library: empty — uploads will appear here."}
+        </p>
       </section>
     </main>
   );
