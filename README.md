@@ -1,78 +1,166 @@
-check npx tsc --noEmit
+# 📅 DayFlow — Daily Scheduler
 
+> A playful, installable PWA day scheduler for your phone. Plan tasks and reminders, check your calendar, and unwind with notes, goals, diary, doodles and music — **no account, no server, no database needed.**
 
-# React + TypeScript + Vite
+[![Vite](https://img.shields.io/badge/Vite-8-61DAFB?style=flat-square)](https://vite.dev)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TS-6.x-3178C6?style=flat-square)](https://www.typescriptlang.org)
+[![PWA](https://img.shields.io/badge/PWA-Installable-7C3AED?style=flat-square)](#deploy-to-vercel)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#license)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Install it like a native app from Chrome (**⋮ → Install app / Add to Home screen**) and use it offline. Your data never leaves the device.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## ✨ Highlights
 
-## React Compiler
+| Area | What you get |
+|---|---|
+| **Today** | Time-of-day greeting, “Right now” + progress ring, Up Next with countdown + reminder time, filters, undo everywhere |
+| **Tasks** | Add/edit with validation, quick durations, live “You’ll be reminded at …” preview, complete / skip / undo / delete |
+| **Alarms** | Reminder / start / end alarms with a **loud looping ring** + service-worker scheduling when the tab is closed, missed-alarm catch-up, vibration, 5 synthesized tones (no audio files needed) |
+| **Calendar** | Month grid with counts, Today jump, per-day quick add, full task actions |
+| **Create** | Notes (search + colors), Diary (mood radiogroup + stats), Doodle drawer (pen/eraser/undo/download) |
+| **Grow** | Goals with categories, overdue flags, completion stats |
+| **Music** | **3 bundled songs built into the app** (play offline, no URL needed), URL tracks, uploaded files stored offline in IndexedDB, shuffle/repeat, spinning vinyl UI |
+| **Personalize** | Light/dark/system theme, accent colour, **wallpaper shades + your own image URL** with Fill/Fit/Tile/Stretch spread, alarm tones |
+| **PWA** | Installable, offline precache, `standalone` display, custom service worker for alarms, consistent 76px tab bar + scrollable shell |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🚀 Quick start
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+**Prerequisites:** Node **≥ 18** and npm.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev          # → http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+```bash
+npm run build        # tsc + Vite production build → dist/ (includes PWA service worker)
+npm run preview      # serve dist/ locally (use this on your phone / LAN)
+npm run lint         # ESLint
+npx tsc --noEmit     # type-check only
+```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+**Regenerate bundled sample songs** (royalty-free, synthesized — no external files):
+```bash
+node scripts/generate-audio.mjs   # writes public/audio/*.wav
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+> The PWA install prompt, notifications, wake-lock and audio context need **HTTPS or localhost**. Vercel (`vercel.json`) gives you HTTPS automatically.
+
+---
+
+## 📖 How it works
+
+### The task → alarm flow (one consistent story)
+Everywhere you see a reminder, it comes from **one source of truth** — `reminderTimeLabel()` in `src/app/utils/notifications.ts`. Saving a task shows **one toast** only:
 
 ```
+✓ Added — Gym · Reminds at 8:50 AM
+```
+
+At the real time you get **one surface each**:
+- **In the app:** a ringing dialog (Done / Skip / Snooze 5 / 10, vibrates) with your picked tone looping until you act.
+- **In the background:** an OS notification via the service worker (system sound + vibration).
+
+No preview pop-ups, no stacked widgets, no toast spam.
+
+### Alarms — and the honest limits
+Alarms ring in **three layers**, so they don’t die with the tab:
+
+1. **Page poll (15s)** while the tab is open.
+2. **Service worker** (`src/sw.ts`, built with `injectManifest`) — keeps timers after tab close/minimize and calls `showNotification` itself, persisting the schedule in Cache Storage.
+3. **Wake lock + catch-up** — the device stays awake while the app is open; anything missed while closed fires as **“Missed …”** on reopen.
+
+> **The limit:** without a server doing Web Push, *no* local-only web page can wake the OS after the browser itself is fully closed and killed. Keep the installed app (or browser) open for on-time rings. See **Settings → Alarm behaviour** in-app for the same explanation.
+
+### Music — do you need a database? No.
+- **Link songs (MP3 URLs):** only title/artist/URL metadata in `localStorage`, streamed on tap.
+- **Uploaded files:** stored as real bytes in **IndexedDB** (via `localforage`, `src/app/utils/musicLibrary.ts`) — survive reloads, play fully offline. `blob:` URLs alone would die on refresh, so we never persist them.
+- **Bundled songs:** `public/audio/*.wav` (generated by `scripts/generate-audio.mjs`) are precached by the service worker — always available, no URL hunting.
+- You’d only need a backend database for cloud sync or sharing playlists across devices.
+
+### Storage at a glance
+
+| Data | Where | Why |
+|---|---|---|
+| Tasks | `localStorage` (`tasks_v1`) | sync, shareable |
+| Notes / Goals / Diary / Music metadata | `localStorage` | sync, shareable |
+| Uploaded audio bytes | **IndexedDB** (`nowplan-music`) | big + binary + offline-safe |
+| Wallpaper, theme, accent, alarm tone | `localStorage` | instant, pre-paint |
+| Alarm schedule (for the worker) | Cache Storage | survives worker restarts |
+
+### Design
+- Follows your system light/dark choice, with a **playful violet → pink → amber** palette.
+- Fixed-height shell: tab bar is always **76px** on every tab; content scrolls inside, headers reserve the same height, gutters are stable — the interface never jumps when you switch tabs.
+- Accessibility: labelled controls, `aria-pressed/current`, focus traps, 44px targets, `prefers-reduced-motion` support, zoom enabled.
+
+---
+
+## 🗂️ Project structure
+
+```
+src/
+  main.tsx                 # theme + wallpaper init before first paint
+  App.tsx                  # router, shell, Toaster, alarm host
+  sw.ts                    # custom service worker (precache + alarm scheduler)
+  app/
+    hooks/useScheduler.ts  # single scheduler: poll + catch-up + worker sync
+    components/            # BottomNav, TaskForm, TaskCard, AlarmDialog, …
+    pages/                 # Today, Add/Edit, Calendar, Notes, Goals, Diary, …
+    utils/
+      notifications.ts     # single notification contract + test sender
+      alarmScheduler.ts    # build schedule + post to worker + wake lock
+      alarmTones.ts        # 5 synthesized tones (WebAudio, no files)
+      musicLibrary.ts      # IndexedDB audio store
+      wallpaper.ts         # shades + custom URL + fit modes
+      storage.ts / date.ts # localStorage CRUD + local-safe dates
+public/
+  audio/*.wav              # bundled songs (generated, royalty-free)
+  icons/scheduler-app.png  # PWA icons
+scripts/generate-audio.mjs # regenerates bundled songs
+vercel.json                # Vercel: filesystem-first SPA + PWA cache headers
+```
+
+---
+
+## ☁️ Deploy to Vercel
+
+Static-only deploy (no server/db/env). Full guide in **[DEPLOY.md](./DEPLOY.md)** — TL;DR:
+
+1. Push to GitHub.
+2. **vercel.com → Add New → Project → Import** → Deploy (Framework: Vite, `npm run build` → `dist`).
+3. Open your `https://your-app.vercel.app` link in Chrome → **Install app** → allow Notifications → *Android Settings → Apps → DayFlow → Notifications → Sound + Vibration ON*.
+
+`vercel.json` handles SPA fallback (deep links like `/music` survive refresh), `/sw.js` `no-cache`, and immutable caching for hashed assets + songs.
+
+---
+
+## 🔧 Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| “Install” button missing | HTTPS + manifest + SW required. Hard-refresh; DevTools → Application → Manifest. |
+| Alarms silent | Re-grant in browser + Android app notification settings; try **Settings → Test alarm**. Keeping the app open helps (see honest limits above). |
+| Custom wallpaper URL “doesn’t work” | Use a **direct image link** (ends `.jpg/.png/.webp`) — page/Drive-share links won’t load. Pick *Fill / Tile* for a fuller spread. |
+| Song link won’t play | Use a direct audio URL (`.mp3/.ogg/.wav`); bundled samples always work offline. |
+| White screen after corrupt data | Notes/Goals/Diary/Music parse defensively; clear site data in browser settings if needed. |
+
+---
+
+## 🤝 Contributing
+
+1. Fork + branch, `npm install`, `npm run dev`.
+2. Keep the **single-source rules**: one `reminderTimeLabel()`, one toast per save, one alarm surface per state.
+3. `npx tsc --noEmit && npm run build` must pass before requesting review.
+
+## 📄 License
+
+MIT — do whatever you want, including shipping your own copy. Sample songs in `public/audio/` are original synthesized loops generated by `scripts/generate-audio.mjs` (no third-party audio).
+
+---
+
+*Built with React 19, TypeScript, Tailwind v4, Radix UI, Sonner, and vite-plugin-pwa.*
