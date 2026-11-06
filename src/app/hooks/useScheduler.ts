@@ -3,7 +3,6 @@ import type { Task } from "../types";
 import { getItemsForDate, getAllItems, TASKS_CHANGED_EVENT } from "../utils/storage";
 import { fireNotification } from "../utils/notifications";
 import { syncAlarmsToServiceWorker, requestWakeLock, releaseWakeLock } from "../utils/alarmScheduler";
-import { playAlarmTone } from "../utils/alarmTones";
 import { getLocalDateStr, toMinutes } from "../utils/date";
 
 export type AlarmType = "start" | "end" | "reminder";
@@ -37,10 +36,39 @@ export function useScheduler() {
   const [now, setNow] = useState(new Date());
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const firedRef = useRef<Set<string>>(new Set()); // dedupe key: `${taskId}-${type}-${date}`
+  const prevFingerprints = useRef<Map<string, string>>(new Map());
+
+  const fingerprint = useCallback((t: Task) =>
+    `${t.title}|${t.date}|${t.startTime}|${t.endTime}|${t.alarmEnabled}|${t.reminderMinutes}|${t.completed}|${t.skipped}`,
+  []);
 
   const refresh = useCallback(() => {
-    setTasks(getItemsForDate(getLocalDateStr()));
-  }, []);
+    const next = getItemsForDate(getLocalDateStr());
+    // Integrity: if a task was edited/deleted/completed, clear its stale
+    // fired-keys + pending dialogs so the new schedule actually re-arms.
+    const prevFp = prevFingerprints.current;
+    const nextFp = new Map(next.map((t) => [t.id, fingerprint(t)]));
+    for (const t of next) {
+      const was = prevFp.get(t.id);
+      const is = nextFp.get(t.id);
+      if (was !== undefined && was !== is) {
+        for (const key of [...firedRef.current]) {
+          if (key.startsWith(`${t.id}-`)) firedRef.current.delete(key);
+        }
+        setAlarms((prev) => prev.filter((a) => a.taskId !== t.id));
+      }
+    }
+    for (const id of [...prevFp.keys()]) {
+      if (!nextFp.has(id)) {
+        for (const key of [...firedRef.current]) {
+          if (key.startsWith(`${id}-`)) firedRef.current.delete(key);
+        }
+        setAlarms((prev) => prev.filter((a) => a.taskId !== id));
+      }
+    }
+    prevFingerprints.current = nextFp;
+    setTasks(next);
+  }, [fingerprint]);
 
   useEffect(() => {
     refresh();
@@ -98,8 +126,7 @@ export function useScheduler() {
         if (prev.some((a) => a.taskId === taskId && a.type === type)) return prev;
         return [...prev, { taskId, type: type as AlarmType }];
       });
-      // Ring the in-app tone too — the worker can't play audio, only notify.
-      playAlarmTone();
+      // No extra tone here — the AlarmDialog rings in a loop (single source).
       // Also refresh so the task list is current.
       refresh();
     };
@@ -138,10 +165,14 @@ export function useScheduler() {
 
       // Reminder: fires in-window, or as a "missed" catch-up if the app was
       // closed when the remind time passed but it's still today.
+      // If the start alarm is ALSO missed in this same tick, only the start
+      // fires — two popups at once is never helpful.
+      const startWillFire =
+        nowMin >= start && nowMin < end && !firedRef.current.has(`${task.id}-start-${task.date}`);
       if (task.reminderMinutes > 0) {
         const inWindow = nowMin >= reminderAt && nowMin < start;
         const missed =
-          nowMin >= reminderAt && nowMin >= start && nowMin <= end;
+          nowMin >= reminderAt && nowMin >= start && nowMin <= end && !startWillFire;
         tryFire(
           "reminder",
           inWindow || missed,

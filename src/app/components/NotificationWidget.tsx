@@ -8,9 +8,11 @@ import { cn } from "./ui/utils";
 const AUTO_DISMISS_MS = 9000;
 
 /**
- * Floating in-app notification widget.
- * Pops up above the bottom nav whenever a task/alarm notification fires —
- * right after saving a task, and when a real reminder/start/end fires.
+ * Floating in-app widget — TEST ONLY now.
+ * Real alarms use the AlarmDialog (foreground) + OS notification
+ * (background), a single consistent surface each. This widget only shows
+ * the clearly-labelled Settings test pop-up so users can preview the tone
+ * and banner without faking a real alarm.
  * Mount once in AppShell so it persists across tab switches.
  */
 export function NotificationWidget() {

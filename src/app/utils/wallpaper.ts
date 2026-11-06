@@ -154,22 +154,42 @@ export function applyWallpaper(value: string, fit: WallpaperFit = getStoredWallp
   const presetSize = preset ? preset.backgroundSize : "cover";
   const { size, repeat } = fitToStyles(fit, presetSize);
 
+  // Image for Settings preview (exported for the preview card).
+  const rootEl: HTMLElement | null = root;
+
   // Paint ONLY the app interface (#root). Body stays default so any
   // gutters outside the column look like plain website chrome, not wallpaper.
-  if (root) {
-    root.style.backgroundImage = background;
-    root.style.backgroundSize = size;
-    root.style.backgroundPosition = "center";
-    root.style.backgroundRepeat = repeat;
-    root.style.backgroundAttachment = "scroll";
-    root.style.backgroundColor = "transparent";
-    root.style.backdropFilter = "none";
+  if (rootEl) {
+    const scrim = "linear-gradient(180deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.06) 30%, rgba(0,0,0,0.30) 100%)";
+    rootEl.style.backgroundImage = `${scrim}, ${background}`;
+    // Keep the image layer and scrim sized together so the scrim doesn't tile over the image.
+    rootEl.style.backgroundSize = size === "20px 20px" ? `${size}, ${size}` : `cover, ${size}`;
+    rootEl.style.backgroundPosition = "center, center";
+    rootEl.style.backgroundRepeat = `no-repeat, ${repeat}`;
+    rootEl.style.backgroundAttachment = "scroll, scroll";
+    rootEl.style.backgroundColor = "transparent";
+    rootEl.style.backdropFilter = "none";
   }
   body.classList.add("has-wallpaper");
 }
 
 export function initWallpaper() {
   applyWallpaper(getStoredWallpaper(), getStoredWallpaperFit());
+}
+
+/** CSS background value for the current selection (for preview cards). */
+export function wallpaperBackground(value: string): string {
+  const normalized = (value ?? "").trim() || "none";
+  if (normalized === "none") return "none";
+  const preset = WALLPAPER_OPTIONS.find((o) => o.id === normalized);
+  if (preset) return preset.background;
+  return `url("${normalized.replace(/"/g, "%22")}")`;
+}
+
+export function wallpaperBackgroundSize(value: string, fit: WallpaperFit = getStoredWallpaperFit()): string {
+  const preset = WALLPAPER_OPTIONS.find((o) => o.id === value);
+  const presetSize = preset ? preset.backgroundSize : "cover";
+  return fitToStyles(fit, presetSize).size;
 }
 
 /** Validate a URL is a plausible http(s) image link. */

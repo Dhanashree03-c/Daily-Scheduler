@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { Palette, ImageIcon, Moon, Sun, Monitor, Download, Bell, Wifi, WifiOff, RotateCcw } from "lucide-react";
 import { isAppInstalled, promptInstall, requestNotificationPermission } from "../utils/pwa";
 import { applyTheme, applyAccentColor, getStoredTheme, type ThemeMode } from "../utils/theme";
-import { previewTaskNotification } from "../utils/notifications";
+import { sendTestNotification } from "../utils/notifications";
 import { getAllItems } from "../utils/storage";
 import { getLocalDateStr } from "../utils/date";
 import { syncAlarmsToServiceWorker, requestWakeLock } from "../utils/alarmScheduler";
@@ -14,6 +14,8 @@ import {
   isPresetWallpaper,
   isValidWallpaperUrl,
   preloadWallpaperImage,
+  wallpaperBackground,
+  wallpaperBackgroundSize,
   WALLPAPER_FITS,
   WALLPAPER_OPTIONS,
   type WallpaperFit,
@@ -137,9 +139,9 @@ export function Settings() {
     if (notificationPermission === "default") {
       await handleRequestNotifications();
     }
-    void previewTaskNotification(target);
-    toast.success("Test notification sent 🔔", {
-      description: `Preview for "${target.title}" — look above the bottom bar.`,
+    void sendTestNotification(target);
+    toast.success("Test sent 🧪", {
+      description: `Check the banner + chime for "${target.title}". Real alarms ring in the popup instead.`,
     });
   };
 
@@ -478,6 +480,29 @@ export function Settings() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-2">{WALLPAPER_FITS.find((f) => f.id === wallpaperFit)?.blurb}</p>
+          {wallpaper !== "none" && (
+            <div className="mt-3">
+              <p className="text-xs font-bold mb-2">Preview — full-screen inside the app ✨</p>
+              <div
+                className="wallpaper-preview h-56 w-full flex flex-col justify-between p-4 text-white"
+                style={{
+                  backgroundImage: wallpaperBackground(wallpaper),
+                  backgroundSize: wallpaperBackgroundSize(wallpaper, wallpaperFit),
+                  backgroundPosition: "center",
+                  backgroundRepeat: wallpaperFit === "tile" ? "repeat" : "no-repeat",
+                }}
+                aria-label="Wallpaper preview"
+                role="img"
+              >
+                <span className="text-xs font-semibold drop-shadow">Live Wallpaper</span>
+                <span className="text-center">
+                  <span className="block text-4xl font-extrabold drop-shadow-lg">9:41</span>
+                  <span className="block text-sm font-semibold drop-shadow">Your day, beautifully yours</span>
+                </span>
+                <span className="text-center text-xs opacity-90">✨ This is how the app will look</span>
+              </div>
+            </div>
+          )}
         </div>
         {isCustomWallpaper && (
           <button

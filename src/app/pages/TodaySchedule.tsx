@@ -12,8 +12,9 @@ import {
   unskipItem,
   restoreItem,
 } from "../utils/storage";
-import { Clock, Sparkles, ChevronRight, PartyPopper, Coffee } from "lucide-react";
-import { formatTimeRange, toMinutes } from "../utils/date";
+import { Clock, Sparkles, ChevronRight, PartyPopper, Coffee, Bell } from "lucide-react";
+import { formatTime, formatTimeRange, toMinutes } from "../utils/date";
+import { reminderTimeLabel } from "../utils/notifications";
 import { cn } from "../components/ui/utils";
 
 function greeting() {
@@ -26,7 +27,7 @@ function greeting() {
 type Filter = "all" | "upcoming" | "done";
 
 export function TodaySchedule() {
-  const { tasks, currentTask, nextTask, minutesLeft, refresh } = useSchedulerContext();
+  const { tasks, currentTask, nextTask, minutesLeft, now, refresh } = useSchedulerContext();
   const [filter, setFilter] = useState<Filter>("all");
 
   const todayLabel = new Date().toLocaleDateString(undefined, {
@@ -157,9 +158,19 @@ export function TodaySchedule() {
           className="block bg-card border border-border rounded-2xl p-4 shadow-sm hover:border-primary/40 transition-colors"
           aria-label={`Up next: ${nextTask.title} at ${nextTask.startTime}`}
         >
-          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">Up next →</h2>
+          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1">
+            Up next → · in {Math.max(0, toMinutes(nextTask.startTime) - (now.getHours() * 60 + now.getMinutes()))} min
+          </h2>
           <p className="font-semibold">{nextTask.title}</p>
-          <p className="text-sm text-muted-foreground mt-0.5">Starts at {nextTask.startTime} · tap for details</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {formatTime(nextTask.startTime)}–{formatTime(nextTask.endTime)} · tap for details
+          </p>
+          {reminderTimeLabel(nextTask) && (
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-primary mt-1.5">
+              <Bell className="size-3.5" aria-hidden />
+              {reminderTimeLabel(nextTask)}
+            </p>
+          )}
         </Link>
       )}
 

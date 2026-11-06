@@ -10,7 +10,8 @@ import { ArrowLeft, Sparkles } from "lucide-react";
 import type { Task, TaskType } from "../types";
 import { addItem, getTaskById, updateItem } from "../utils/storage";
 import { getLocalDateStr, isValidTimeRange } from "../utils/date";
-import { alarmWhenLabel, previewTaskNotification, requestNotificationPermission } from "../utils/notifications";
+import { reminderTimeLabel, requestNotificationPermission } from "../utils/notifications";
+import { formatTime } from "../utils/date";
 
 interface TaskFormProps {
   mode: "add" | "edit";
@@ -50,6 +51,12 @@ export function TaskForm({ mode, initial, initialDate }: TaskFormProps) {
     const mins = Number(reminderMinutes);
     if (alarmEnabled && (reminderMinutes === "" || Number.isNaN(mins) || mins < 0 || mins > 1440)) {
       e.reminder = "Enter 0 to 1440 minutes (24 hours).";
+    } else if (alarmEnabled && mins > 0) {
+      const [sh, sm] = startTime.split(":").map(Number);
+      const startMin = sh * 60 + sm;
+      if (!Number.isNaN(startMin) && mins > startMin) {
+        e.reminder = `That reminds before midnight. Start is ${formatTime(startTime)} — pick ≤ ${startMin} min.`;
+      }
     }
     return e;
   }, [title, date, startTime, endTime, reminderMinutes, alarmEnabled]);
@@ -77,39 +84,31 @@ export function TaskForm({ mode, initial, initialDate }: TaskFormProps) {
         alarmEnabled,
         reminderMinutes: alarmEnabled ? Number(reminderMinutes) : 0,
       };
+      // Permission once, inside the submit gesture (before saving).
+      let permNote = "";
+      if (alarmEnabled && Notification.permission === "default") {
+        const granted = await requestNotificationPermission();
+        permNote = granted ? "" : " (notifications off — enable in Settings)";
+      } else if (alarmEnabled && Notification.permission === "denied") {
+        permNote = " (notifications blocked — enable in browser settings)";
+      }
       let saved: Task | undefined;
       if (mode === "edit" && initial) {
         updateItem(initial.id, payload);
         saved = getTaskById(initial.id) ?? { ...initial, ...payload };
-        toast.success("Saved ✓", {
-          description: alarmEnabled
-            ? `"${payload.title}" was updated. ${alarmWhenLabel(saved)}.`
-            : `"${payload.title}" was updated.`,
-        });
       } else {
         saved = addItem(payload);
-        toast.success("Added 🎉", {
-          description: alarmEnabled
-            ? `"${payload.title}" is scheduled. ${alarmWhenLabel(saved)}.`
-            : `"${payload.title}" is on your schedule.`,
-        });
-      }
-      if (alarmEnabled && Notification.permission === "default") {
-        const granted = await requestNotificationPermission();
-        if (!granted) {
-          toast.info("Reminders need permission", {
-            description: "Turn on notifications in your browser settings to get reminders.",
-          });
-        }
       }
       // Land on the day the task belongs to so users see what they created.
       navigate(date === getLocalDateStr() ? "/today" : "/calendar");
-      // Pop the notification widget + OS notification immediately as a preview.
-      if (alarmEnabled && saved) {
-        window.setTimeout(() => {
-          void previewTaskNotification(saved);
-        }, 450);
-      }
+      // ONE confirmation — no preview popups. The alarm is already scheduled
+      // (service worker re-synced on save); it will ring + notify at its time.
+      const when = saved ? reminderTimeLabel(saved) : null;
+      toast.success(mode === "edit" ? "Saved ✓" : "Added ✓", {
+        description: when
+          ? `"${payload.title}" · ${when}${permNote}`
+          : `"${payload.title}" scheduled · no reminder`,
+      });
     } finally {
       setSaving(false);
     }
@@ -266,6 +265,24 @@ export function TaskForm({ mode, initial, initialDate }: TaskFormProps) {
             />
             <p id="task-reminder-help" className="text-xs text-muted-foreground mt-1">
               0 means right at the start time. Max 1440 (24 hours).
+              {!errors.reminder && startTime && (
+                <>
+                  {" "}You&apos;ll be reminded — <strong className="text-foreground">
+                    {reminderTimeLabel({
+                      id: "draft",
+                      title: title || "Task",
+                      date,
+                      startTime,
+                      endTime,
+                      type,
+                      completed: false,
+                      skipped: false,
+                      alarmEnabled: true,
+                      reminderMinutes: Number(reminderMinutes) || 0,
+                    }) ?? formatTime(startTime)}
+                  </strong>.
+                </>
+              )}
             </p>
             {showError("reminder") && fieldError("task-reminder", errors.reminder)}
           </div>

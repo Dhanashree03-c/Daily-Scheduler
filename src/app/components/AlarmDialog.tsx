@@ -3,10 +3,9 @@ import type { Task } from "../types";
 import type { Alarm, AlarmType } from "../hooks/useScheduler";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
-import { BellRing, Clock, AlignLeft, Volume2, VolumeX } from "lucide-react";
+import { BellRing, Clock, AlignLeft, Volume2 } from "lucide-react";
 import { formatTimeRange } from "../utils/date";
 import { startAlarmRing } from "../utils/alarmTones";
-import { useState } from "react";
 
 export interface AlarmDialogProps {
   alarm: Alarm;
@@ -25,12 +24,11 @@ const HEADINGS: Record<AlarmType, string> = {
 };
 
 export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSkip, queueCount = 1 }: AlarmDialogProps) {
-  const [muted, setMuted] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
 
   // Ring loudly in a loop while this dialog is open. Stops on any action.
   useEffect(() => {
-    if (!task || muted) return;
+    if (!task) return;
     const stop = startAlarmRing();
     stopRef.current = stop;
     return () => {
@@ -38,15 +36,16 @@ export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSk
       stopRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task?.id, alarm.type, muted]);
+  }, [task?.id, alarm.type]);
 
   if (!task) return null;
 
   const silenceAnd = (fn: () => void) => () => {
     stopRef.current?.();
-    setMuted(true);
     fn();
   };
+
+  const heading = alarm.missed ? `⏰ Missed — ${HEADINGS[alarm.type].replace(/^(▶️|⏰|🔔)\s*/, "")}` : HEADINGS[alarm.type];
   const handleComplete = silenceAnd(() => {
     onComplete?.(task.id);
     onDismiss(task.id, alarm.type);
@@ -64,10 +63,10 @@ export function AlarmDialog({ alarm, task, onSnooze, onDismiss, onComplete, onSk
             <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white animate-pulse">
               <BellRing className="size-5" aria-hidden />
             </span>
-            <DialogTitle className="text-left">{HEADINGS[alarm.type]}</DialogTitle>
+            <DialogTitle className="text-left">{heading}</DialogTitle>
             <span className="ml-auto inline-flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400">
-              {muted ? <VolumeX className="size-4" aria-hidden /> : <Volume2 className="size-4" aria-hidden />}
-              {muted ? "Muted" : "Ringing…"}
+              <Volume2 className="size-4" aria-hidden />
+              Ringing…
             </span>
           </div>
           <DialogDescription id="alarm-desc" className="text-left">

@@ -283,6 +283,50 @@ body.has-wallpaper {
 }
 body.has-wallpaper #root {
   backdrop-filter: none;
+  isolation: isolate;
+}
+
+/* Lock-screen glass look: cards float translucently over the wallpaper. */
+body.has-wallpaper #root .settings-card,
+body.has-wallpaper #root [data-slot="card"],
+body.has-wallpaper #root .bg-card,
+body.has-wallpaper #root .hero-card {
+  background-color: hsl(var(--card) / 0.78);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border-color: hsl(var(--foreground) / 0.14);
+  box-shadow: 0 10px 34px -10px rgba(0, 0, 0, 0.35);
+}
+
+body.has-wallpaper #root .empty-state {
+  background-color: hsl(var(--card) / 0.68);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+body.has-wallpaper .nav-bar {
+  background-color: hsl(var(--background) / 0.55);
+  backdrop-filter: blur(22px) saturate(1.4);
+}
+
+body.has-wallpaper .page-title {
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* Settings preview phone frame */
+.wallpaper-preview {
+  border-radius: 1.75rem;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.5);
+  border: 1px solid hsl(var(--foreground) / 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing-disc {
+    animation: none;
+  }
+  .eq-bar {
+    animation: none;
+  }
 }
 
 /* Shared UI utilities */

@@ -14,6 +14,7 @@ import {
 import { Link } from "react-router-dom";
 import { cn } from "./ui/utils";
 import { formatDateLabel, formatTimeRange } from "../utils/date";
+import { reminderTimeLabel } from "../utils/notifications";
 
 interface TaskCardProps {
   task: Task;
@@ -137,19 +138,11 @@ export function TaskCard({
             )}
           </div>
 
-          {task.alarmEnabled ? (
-            <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
-              <Bell className="size-3.5" aria-hidden />
-              {task.reminderMinutes > 0
-                ? `Reminder ${task.reminderMinutes} min before`
-                : "Reminder at start time"}
-            </p>
-          ) : (
-            <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
-              <Bell className="size-3.5" aria-hidden />
-              No reminder
-            </p>
-          )}
+          <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1.5">
+            <Bell className="size-3.5" aria-hidden />
+            {reminderTimeLabel(task) ?? "No reminder"}
+            {task.alarmEnabled && task.reminderMinutes > 0 ? ` · ${task.reminderMinutes} min before` : ""}
+          </p>
         </div>
 
         <div className="flex flex-col gap-0.5 shrink-0" aria-label={`Actions for ${task.title}`}>
