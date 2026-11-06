@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Task } from "../types";
-import { getItemsForDate, TASKS_CHANGED_EVENT } from "../utils/storage";
+import { getItemsForDate, getAllItems, TASKS_CHANGED_EVENT } from "../utils/storage";
 import { fireNotification } from "../utils/notifications";
+import { syncAlarmsToServiceWorker, requestWakeLock, releaseWakeLock } from "../utils/alarmScheduler";
 import { getLocalDateStr, toMinutes } from "../utils/date";
 
 export type AlarmType = "start" | "end" | "reminder";
@@ -10,11 +11,26 @@ export interface Alarm {
   taskId: string;
   type: AlarmType;
   snoozedUntil?: number; // epoch ms
+  missed?: boolean;
 }
 
 /** End alarms only fire shortly after a task ends (avoids spamming on open). */
 const END_WINDOW_MINUTES = 15;
 
+/**
+ * Single scheduler instance (mounted once in SchedulerProvider).
+ *
+ * How alarms ring when the app is closed:
+ *  1. Page poll (15s) — fires while the tab is open.
+ *  2. Service Worker schedule (utils/alarmScheduler + src/sw.ts) — the worker
+ *     keeps timers after tab close/minimise and calls showNotification itself.
+ *  3. Missed-alarm catch-up — on open/focus, anything whose time passed while
+ *     the app was closed fires immediately as "Missed" (see tryFire below).
+ *
+ * Honest limit: without a server doing Web Push, NO local-only web page can
+ * wake the OS after the browser process itself is fully killed. The worker
+ * covers tab-closed/browser-open + sleep; catch-up covers the rest.
+ */
 export function useScheduler() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [now, setNow] = useState(new Date());
@@ -31,14 +47,63 @@ export function useScheduler() {
       setNow(new Date());
       refresh();
     }, 15_000);
-    const onChange = () => refresh();
+    const onChange = () => {
+      refresh();
+      void syncAlarmsToServiceWorker(getAllItems());
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        setNow(new Date());
+        refresh();
+        void syncAlarmsToServiceWorker(getAllItems());
+        // Re-acquire the wake lock that the OS auto-releases on hide.
+        void requestWakeLock();
+      } else {
+        void releaseWakeLock();
+      }
+    };
     window.addEventListener(TASKS_CHANGED_EVENT, onChange);
     window.addEventListener("focus", onChange);
+    document.addEventListener("visibilitychange", onVisible);
+    // Initial sync so the worker starts ringing even if this tab closes.
+    void syncAlarmsToServiceWorker(getAllItems());
+    // Keep the device awake while the app is open so alarms fire on time
+    // even with the screen off. Best-effort; released automatically on hide.
+    void requestWakeLock();
     return () => {
       clearInterval(poll);
       window.removeEventListener(TASKS_CHANGED_EVENT, onChange);
       window.removeEventListener("focus", onChange);
+      document.removeEventListener("visibilitychange", onVisible);
+      void releaseWakeLock();
     };
+  }, [refresh]);
+
+  // Service-worker-fired alarms: show the in-app dialog/widget (the worker
+  // already showed the OS notification, so don't re-notify here).
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const msg = event.data as
+        | { type?: string; alarm?: { id: string; taskId: string; type: string } }
+        | undefined;
+      if (!msg || msg.type !== "ALARM_FIRED" || !msg.alarm) return;
+      const { taskId, type } = msg.alarm;
+      const key = msg.alarm.id;
+      if (firedRef.current.has(key)) return; // page poll already fired it
+      firedRef.current.add(key);
+      const task = getAllItems().find((t) => t.id === taskId);
+      if (!task || task.completed || task.skipped) return;
+      setAlarms((prev) => {
+        if (prev.some((a) => a.taskId === taskId && a.type === type)) return prev;
+        return [...prev, { taskId, type: type as AlarmType }];
+      });
+      // Also refresh so the task list is current.
+      refresh();
+    };
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", onMessage as EventListener);
+      return () => navigator.serviceWorker.removeEventListener("message", onMessage as EventListener);
+    }
   }, [refresh]);
 
   useEffect(() => {
@@ -54,23 +119,44 @@ export function useScheduler() {
       if (Number.isNaN(start) || Number.isNaN(end)) return;
       const reminderAt = start - task.reminderMinutes;
 
-      const tryFire = (type: AlarmType, condition: boolean, title: string, body: string) => {
+      const tryFire = (
+        type: AlarmType,
+        condition: boolean,
+        title: string,
+        body: string,
+        missed = false
+      ) => {
         const key = `${task.id}-${type}-${task.date}`;
         if (!condition || firedRef.current.has(key)) return;
         firedRef.current.add(key);
         void fireNotification(title, body, key, task);
-        setAlarms((prev) => [...prev, { taskId: task.id, type }]);
+        setAlarms((prev) => [...prev, { taskId: task.id, type, missed }]);
       };
 
+      // Reminder: fires in-window, or as a "missed" catch-up if the app was
+      // closed when the remind time passed but it's still today.
       if (task.reminderMinutes > 0) {
+        const inWindow = nowMin >= reminderAt && nowMin < start;
+        const missed =
+          nowMin >= reminderAt && nowMin >= start && nowMin <= end;
         tryFire(
           "reminder",
-          nowMin >= reminderAt && nowMin < start,
-          `Coming up: ${task.title}`,
-          `Starts in ${task.reminderMinutes} min`
+          inWindow || missed,
+          inWindow ? `Coming up: ${task.title}` : `Missed reminder: ${task.title}`,
+          inWindow ? `Starts in ${task.reminderMinutes} min` : "The app was closed — catching you up now.",
+          missed && !inWindow
         );
       }
-      tryFire("start", nowMin >= start && nowMin < end, `Now: ${task.title}`, "Time to start this.");
+      // Start: fires in-task — including as missed catch-up when we reopen
+      // the app while the task is already running (idle the first minute
+      // counts as "on time" for labelling).
+      tryFire(
+        "start",
+        nowMin >= start && nowMin < end,
+        `Now: ${task.title}`,
+        "Time to start this.",
+        nowMin > start
+      );
       // Only fire "end" if the task ended recently (not hours ago).
       tryFire(
         "end",
@@ -103,6 +189,8 @@ export function useScheduler() {
           : a
       )
     );
+    // Re-sync so the snoozed time is what the worker fires next.
+    void syncAlarmsToServiceWorker(getAllItems());
   }, []);
 
   const nowMin = now.getHours() * 60 + now.getMinutes();

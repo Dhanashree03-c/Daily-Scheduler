@@ -6,35 +6,28 @@ import { applyTheme, applyAccentColor, getStoredTheme, type ThemeMode } from "..
 import { previewTaskNotification } from "../utils/notifications";
 import { getAllItems } from "../utils/storage";
 import { getLocalDateStr } from "../utils/date";
+import { syncAlarmsToServiceWorker, requestWakeLock } from "../utils/alarmScheduler";
+import {
+  applyWallpaper,
+  getStoredWallpaper,
+  isPresetWallpaper,
+  isValidWallpaperUrl,
+  preloadWallpaperImage,
+  WALLPAPER_OPTIONS,
+} from "../utils/wallpaper";
 import { cn } from "../components/ui/utils";
-
-interface WallpaperOption {
-  id: string;
-  name: string;
-  className: string;
-}
-
-const WALLPAPER_OPTIONS: WallpaperOption[] = [
-  { id: "none", name: "None", className: "wallpaper-none" },
-  { id: "gradient1", name: "Sunset", className: "wallpaper-gradient1" },
-  { id: "gradient2", name: "Ocean", className: "wallpaper-gradient2" },
-  { id: "gradient3", name: "Forest", className: "wallpaper-gradient3" },
-  { id: "gradient4", name: "Peach", className: "wallpaper-gradient4" },
-  { id: "pattern1", name: "Dots", className: "wallpaper-pattern1" },
-];
 
 const DEFAULT_ACCENT = "#7c3aed";
 
 export function Settings() {
   const [theme, setTheme] = useState<ThemeMode>(() => getStoredTheme());
-  const [wallpaper, setWallpaper] = useState<string>(() => {
-    try {
-      return localStorage.getItem("wallpaper") || "none";
-    } catch {
-      return "none";
-    }
+  const [wallpaper, setWallpaper] = useState<string>(() => getStoredWallpaper());
+  const [wallpaperUrl, setWallpaperUrl] = useState(() => {
+    const stored = getStoredWallpaper();
+    return stored !== "none" && !isPresetWallpaper(stored) ? stored : "";
   });
-  const [wallpaperUrl, setWallpaperUrl] = useState("");
+  const [applyingWallpaper, setApplyingWallpaper] = useState(false);
+  const isCustomWallpaper = wallpaper !== "none" && !isPresetWallpaper(wallpaper);
   const [customColor, setCustomColor] = useState<string>(() => {
     try {
       return localStorage.getItem("customColor") || DEFAULT_ACCENT;
@@ -45,6 +38,8 @@ export function Settings() {
   const [installed, setInstalled] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>("default");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [wakeLockState, setWakeLockState] = useState<string>("Unknown");
+  const [serviceWorkerState, setServiceWorkerState] = useState<string>("Registering…");
 
   useEffect(() => {
     setInstalled(isAppInstalled());
@@ -53,6 +48,17 @@ export function Settings() {
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    if ("wakeLock" in navigator) {
+      setWakeLockState("Supported — requested while app is open");
+    } else {
+      setWakeLockState("Not supported on this browser");
+    }
+    navigator.serviceWorker?.ready
+      .then((reg) => {
+        setServiceWorkerState(reg.active ? "Active — ringing even if you close this tab" : "Waiting…");
+        void syncAlarmsToServiceWorker(getAllItems());
+      })
+      .catch(() => setServiceWorkerState("Unavailable"));
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -64,20 +70,9 @@ export function Settings() {
   }, [theme]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("wallpaper", wallpaper);
-    } catch { /* ignore */ }
-    const isPreset = WALLPAPER_OPTIONS.some((o) => o.id === wallpaper);
-    document.body.classList.remove(...WALLPAPER_OPTIONS.map((o) => o.className));
-    document.body.classList.remove("has-wallpaper");
-    document.body.style.backgroundImage = "";
-    if (isPreset) {
-      const option = WALLPAPER_OPTIONS.find((o) => o.id === wallpaper)!;
-      if (option.id !== "none") document.body.classList.add(option.className, "has-wallpaper");
-    } else if (wallpaper !== "none") {
-      document.body.style.backgroundImage = `url(${wallpaper})`;
-      document.body.classList.add("has-wallpaper");
-    }
+    // Centralized: paints body + #root inline so it is visible everywhere,
+    // persists, and matches what initWallpaper() does on reload.
+    applyWallpaper(wallpaper);
   }, [wallpaper]);
 
   useEffect(() => {
@@ -104,6 +99,21 @@ export function Settings() {
     else toast.info("Notifications not enabled", { description: "You can enable them any time from here or your browser settings." });
   };
 
+  const handleKeepAwake = async () => {
+    const ok = await requestWakeLock();
+    if (ok) {
+      setWakeLockState("On — screen woken while app is open");
+      toast.success("Keeping your screen awake 🔆", {
+        description: "Alarms will fire on time even with the screen off (while this app stays open).",
+      });
+    } else {
+      setWakeLockState("Unavailable or blocked");
+      toast.error("Wake lock unavailable", {
+        description: "Your browser/OS blocked it — alarms still ring while the app is open.",
+      });
+    }
+  };
+
   const handleTestNotification = async () => {
     const tasks = getAllItems();
     const target =
@@ -123,21 +133,40 @@ export function Settings() {
     });
   };
 
-  const applyWallpaperUrl = () => {
+  const selectWallpaper = (id: string, name: string) => {
+    setWallpaper(id);
+    toast.success(`${name} background applied 🖼️`, {
+      description: "Look behind the cards — it's live everywhere.",
+    });
+  };
+
+  const applyWallpaperUrl = async () => {
     const url = wallpaperUrl.trim();
     if (!url) {
       toast.error("Paste an image link first", { description: "Add a direct image URL to use a custom background." });
       return;
     }
-    try {
-      const parsed = new URL(url);
-      if (!/^https?:$/.test(parsed.protocol)) throw new Error("bad protocol");
-    } catch {
-      toast.error("That doesn't look like a valid URL", { description: "Check the link and try again." });
+    if (!isValidWallpaperUrl(url)) {
+      toast.error("Use an http(s) image link", {
+        description: "Copy the direct link to the image (ends in .jpg/.png/.webp), not a page or Google Drive link.",
+      });
       return;
     }
-    setWallpaper(url);
-    toast.success("Custom background applied 🖼️");
+    if (applyingWallpaper) return;
+    setApplyingWallpaper(true);
+    try {
+      const ok = await preloadWallpaperImage(url);
+      if (!ok) {
+        toast.error("Couldn't load that image", {
+          description: "Check the link is a direct image and try again.",
+        });
+        return;
+      }
+      setWallpaper(url);
+      toast.success("Custom background applied 🖼️");
+    } finally {
+      setApplyingWallpaper(false);
+    }
   };
 
   const themeOptions: { mode: ThemeMode; label: string; icon: typeof Sun }[] = [
@@ -230,6 +259,33 @@ export function Settings() {
         </p>
       </section>
 
+      <section className="settings-card" aria-label="Alarm behaviour">
+        <h2 className="text-base font-bold mb-2 flex items-center gap-2">
+          <Bell className="size-5 text-primary" aria-hidden /> Alarm behaviour
+        </h2>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          Alarms now ring in three ways so they don&apos;t die with the tab:
+        </p>
+        <ul className="text-xs text-muted-foreground leading-relaxed list-disc pl-4 mt-1 space-y-1">
+          <li><strong className="text-foreground">Service worker:</strong> {serviceWorkerState}. Scheduled alarms still fire if you close/minimise this tab (browser kept open).</li>
+          <li><strong className="text-foreground">Wake lock:</strong> {wakeLockState}.</li>
+          <li><strong className="text-foreground">Catch-up:</strong> anything missed while the app was closed fires as “Missed” the moment you reopen.</li>
+        </ul>
+        <div className="flex gap-2 mt-3 flex-wrap">
+          <button type="button" onClick={handleKeepAwake} className="min-h-11 px-3 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-accent transition-colors">
+            Keep screen awake 🔆
+          </button>
+          <button type="button" onClick={handleTestNotification} className="min-h-11 px-3 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-accent transition-colors">
+            Test alarm 🔔
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+          Honest limit: without a server doing Web Push, no local-only web page can wake the OS after the browser
+          itself is fully closed &amp; killed. For a guaranteed ring in that case you&apos;d need a push server or a native
+          app. Everything above is the best a PWA can do — keep the browser/app open for on-time rings.
+        </p>
+      </section>
+
       <section className="settings-card" aria-label="Theme">
         <div className="flex items-center gap-2 mb-4">
           <Palette className="size-5 text-primary" aria-hidden />
@@ -284,9 +340,14 @@ export function Settings() {
       </section>
 
       <section className="settings-card" aria-label="Background">
-        <div className="flex items-center gap-2 mb-4">
-          <ImageIcon className="size-5 text-primary" aria-hidden />
-          <h2 className="text-base font-bold">Background</h2>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <ImageIcon className="size-5 text-primary" aria-hidden />
+            <h2 className="text-base font-bold">Background</h2>
+          </div>
+          <span className="text-xs text-muted-foreground" role="status">
+            {isCustomWallpaper ? "Custom image" : wallpaper === "none" ? "Default" : `${WALLPAPER_OPTIONS.find((o) => o.id === wallpaper)?.name ?? wallpaper} applied`}
+          </span>
         </div>
         <div className="grid grid-cols-3 gap-3" role="radiogroup" aria-label="Background style">
           {WALLPAPER_OPTIONS.map((option) => (
@@ -295,12 +356,13 @@ export function Settings() {
               type="button"
               role="radio"
               aria-checked={wallpaper === option.id}
-              onClick={() => setWallpaper(option.id)}
+              aria-pressed={wallpaper === option.id}
+              onClick={() => selectWallpaper(option.id, option.name)}
               aria-label={`Background: ${option.name}`}
               className={cn(
-                "aspect-square rounded-xl border-2 overflow-hidden transition-all hover:scale-[1.02] min-h-11",
+                "aspect-square rounded-xl border-2 overflow-hidden relative transition-all hover:scale-[1.02] min-h-11",
                 option.className,
-                wallpaper === option.id ? "border-primary ring-2 ring-primary/30" : "border-border"
+                wallpaper === option.id ? "border-primary ring-2 ring-primary/40 scale-[1.03]" : "border-border"
               )}
             >
               <span className="sr-only">{option.name}{wallpaper === option.id ? " (selected)" : ""}</span>
@@ -308,12 +370,36 @@ export function Settings() {
                 <span className="w-full h-full flex items-center justify-center text-muted-foreground text-xs font-semibold">None</span>
               )}
               {wallpaper === option.id && option.id !== "none" && (
-                <span className="w-full h-full flex items-end justify-center pb-1 text-[10px] font-bold text-white drop-shadow">{option.name} ✓</span>
+                <span className="absolute bottom-1 inset-x-0 text-center text-[10px] font-bold text-white drop-shadow">{option.name} ✓</span>
               )}
             </button>
           ))}
+          {isCustomWallpaper && (
+            <button
+              type="button"
+              role="radio"
+              aria-checked
+              aria-pressed
+              onClick={() => selectWallpaper(wallpaper, "Custom")}
+              aria-label="Background: Custom image (current)"
+              className="aspect-square rounded-xl border-2 border-primary ring-2 ring-primary/40 overflow-hidden relative min-h-11"
+              style={{ backgroundImage: `url("${wallpaper}")`, backgroundSize: "cover", backgroundPosition: "center" }}
+            >
+              <span className="sr-only">Custom image (selected)</span>
+              <span className="absolute bottom-1 inset-x-0 text-center text-[10px] font-bold text-white drop-shadow">Custom ✓</span>
+            </button>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mt-3">Tap a style above — it applies instantly.</p>
+        <p className="text-xs text-muted-foreground mt-3">Tap a style above — it paints instantly behind every tab, and survives reloads.</p>
+        {isCustomWallpaper && (
+          <button
+            type="button"
+            onClick={() => selectWallpaper("none", "Default")}
+            className="mt-2 min-h-11 px-3 py-2 rounded-xl border border-border text-xs font-semibold hover:bg-accent transition-colors"
+          >
+            Remove custom image
+          </button>
+        )}
       </section>
 
       <section className="settings-card" aria-label="Custom background">
@@ -322,18 +408,64 @@ export function Settings() {
           <input
             id="custom-wallpaper-url"
             type="url"
+            inputMode="url"
             placeholder="https://…/your-wallpaper.jpg"
             value={wallpaperUrl}
             onChange={(e) => setWallpaperUrl(e.target.value)}
+            onPaste={(e) => {
+              // Apply immediately on paste so users don't have to find Apply.
+              const pasted = e.clipboardData.getData("text").trim();
+              if (pasted) {
+                setWallpaperUrl(pasted);
+                // Validate + apply in the next tick once state is set.
+                window.setTimeout(() => {
+                  const url = pasted;
+                  if (isValidWallpaperUrl(url)) {
+                    setApplyingWallpaper(true);
+                    preloadWallpaperImage(url).then((ok) => {
+                      setApplyingWallpaper(false);
+                      if (ok) {
+                        setWallpaper(url);
+                        toast.success("Custom background applied 🖼️");
+                      } else {
+                        toast.error("Couldn't load that image", {
+                          description: "Check the link is a direct image and try again.",
+                        });
+                      }
+                    });
+                  }
+                }, 0);
+              }
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") applyWallpaperUrl();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void applyWallpaperUrl();
+              }
             }}
             aria-describedby="wp-help"
             className="flex-1 min-w-52 min-h-11 px-3 py-2.5 border border-border rounded-xl bg-input-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
           />
-          <button type="button" onClick={applyWallpaperUrl} className="min-h-11 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:bg-primary/90">Apply</button>
+          <button
+            type="button"
+            onClick={() => void applyWallpaperUrl()}
+            disabled={applyingWallpaper}
+            className="min-h-11 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {applyingWallpaper ? "Loading…" : "Apply"}
+          </button>
         </div>
-        <p id="wp-help" className="text-xs text-muted-foreground mt-2">Paste a direct link to any image, then press Apply or Enter.</p>
+        {wallpaperUrl.trim() && (() => {
+          const valid = isValidWallpaperUrl(wallpaperUrl.trim());
+          return (
+            <p id="wp-help" className={cn("text-xs mt-2", valid ? "text-muted-foreground" : "text-destructive font-medium")} role={valid ? undefined : "alert"}>
+              {valid ? "Looks good — press Apply or Enter. We'll check it loads first." : "Enter a direct image link (https://…/photo.jpg). Pages like Drive share links won't work."}
+            </p>
+          );
+        })()}
+        {!wallpaperUrl.trim() && (
+          <p id="wp-help" className="text-xs text-muted-foreground mt-2">Paste a direct link to any image — it applies right away on paste, Apply, or Enter.</p>
+        )}
         <p className="text-xs text-muted-foreground mt-1">Reminders fire while the app is open. Keep it open on your home screen for the best experience.</p>
       </section>
     </main>

@@ -273,14 +273,14 @@ code {
 }
 
 body.has-wallpaper {
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
+/* JS paints the wallpaper inline on #root (see utils/wallpaper.ts) so it is
+   actually visible inside the 480px column. Keep it clean here: no glass
+   overlay, no blur — the old glass hid presets/custom images. */
 body.has-wallpaper #root {
-  background: var(--surface-glass);
-  backdrop-filter: blur(16px);
+  backdrop-filter: none;
 }
 
 /* Shared UI utilities */

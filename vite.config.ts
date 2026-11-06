@@ -1,14 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite"; // 👈 add this import
+import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss(), // 👈 add this plugin
+    tailwindcss(),
     VitePWA({
+      strategies: "injectManifest",
       registerType: "autoUpdate",
+      srcDir: "src",
+      filename: "sw.ts",
       includeAssets: ["icons/scheduler-app.png"],
       manifest: {
         name: "DayFlow Scheduler",
@@ -24,7 +27,7 @@ export default defineConfig({
           { src: "/icons/scheduler-app.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
       },
     }),
